@@ -12,19 +12,13 @@ async function main() {
     const server = new OMSSServer({
         name: 'CinePro',
         version: '1.0.0',
-
-        // Network
-        host: process.env.HOST ?? 'localhost',
-        port: Number(process.env.PORT ?? 3000),
+        host: process.env.HOST ?? '0.0.0.0', // Render-er jonno 0.0.0.0 deya bhalo
+        port: Number(process.env.PORT ?? 10000),
         publicUrl: process.env.PUBLIC_URL,
 
-        // Cache
         cache: {
             type: (process.env.CACHE_TYPE as 'memory' | 'redis') ?? 'memory',
-            ttl: {
-                sources: 60 * 60,
-                subtitles: 60 * 60 * 24
-            },
+            ttl: { sources: 3600, subtitles: 86400 },
             redis: {
                 host: process.env.REDIS_HOST ?? 'localhost',
                 port: Number(process.env.REDIS_PORT ?? 6379),
@@ -32,67 +26,52 @@ async function main() {
             }
         },
 
-        // TMDB
         tmdb: {
             apiKey: process.env.TMDB_API_KEY!,
-            cacheTTL: 24 * 60 * 60
+            cacheTTL: 86400
         },
 
-        // Proxy Config
         proxyConfig: {
             knownThirdPartyProxies: knownThirdPartyProxies,
             streamPatterns
         },
 
         cors: {
-            origin: process.env.CORS_ORIGIN ?? '*',
-            methods: ['GET', 'OPTIONS'],
-            allowedHeaders: ['Content-Type', 'Authorization'],
-            exposedHeaders: ['Content-Range', 'Accept-Ranges', 'ETag'],
-            preflightContinue: false,
-            optionsSuccessStatus: 204
+            origin: '*',
+            methods: ['GET', 'OPTIONS']
         },
 
         stremio: {
             enableNativeAddon: process.env.STREMIO_ADDON === 'true',
             stremioAddons: [
-                {
-                    id: 'WebStreamerMBG',
-                    url: 'https://87d6a6ef6b58-webstreamrmbg-dev.baby-beamup.club/manifest.json',
-                    enabled: true
-                },
-                {
-                    id: 'Streamify',
-                    url: 'https://stremify.hayd.uk/manifest.json',
-                    enabled: true
-                }
+                { id: 'WebStreamerMBG', url: 'https://87d6a6ef6b58-webstreamrmbg-dev.baby-beamup.club/manifest.json', enabled: true },
+                { id: 'Streamify', url: 'https://stremify.hayd.uk/manifest.json', enabled: true }
             ]
-        },
-
-        mcp: {
-            enabled: process.env.MCP_ENABLED === 'true'
         }
     });
 
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- ARTPLAYER CUSTOM ROUTES FIXED ---
-    const app = (server as any).getApp();
+    // --- UPDATED APP ACCESS LOGIC ---
+    // Framework-er bhetor theke Express app instance khuje ber kora
+    const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
 
-    // Movie Player
-    app.get('/v1/play/movie/:id', async (req: any, res: any) => {
-        const id = req.params.id;
-        const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/movies/${id}`;
-        renderPlayer(res, streamApiUrl, `Movie ${id}`);
-    });
+    if (app) {
+        // Movie Player
+        app.get('/v1/play/movie/:id', async (req: any, res: any) => {
+            const id = req.params.id;
+            const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/movies/${id}`;
+            renderPlayer(res, streamApiUrl, `Movie ${id}`);
+        });
 
-    // TV Player
-    app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
-        const { id, s, e } = req.params;
-        const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/tv/${id}/${s}/${e}`;
-        renderPlayer(res, streamApiUrl, `TV Series ${id} - S${s}E${e}`);
-    });
+        // TV Player
+        app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
+            const { id, s, e } = req.params;
+            const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/tv/${id}/${s}/${e}`;
+            renderPlayer(res, streamApiUrl, `TV Series ${id} - S${s}E${e}`);
+        });
+    }
 
     function renderPlayer(res: any, apiUrl: string, title: string) {
         res.send(`
@@ -116,10 +95,11 @@ async function main() {
                         try {
                             const response = await fetch('${apiUrl}');
                             const data = await response.json();
+                            // OMSS framework e 'sources' thake
                             const m3u8Url = data.sources && data.sources[0] ? data.sources[0].url : '';
                             
                             if(!m3u8Url) {
-                                document.body.innerHTML = '<h2 style="color:white;text-align:center;padding-top:20%;">Stream link not found yet. Try again later!</h2>';
+                                document.body.innerHTML = '<div style="color:white;text-align:center;padding-top:20%;font-family:sans-serif;"><h2>No Stream Found!</h2><p>Please check the API response for movie ID.</p></div>';
                                 return;
                             }
 
@@ -135,7 +115,6 @@ async function main() {
                                 playbackRate: true,
                                 aspectRatio: true,
                                 fullscreen: true,
-                                fullscreenWeb: true,
                                 customType: {
                                     m3u8: function (video, url) {
                                         if (Hls.isSupported()) {
