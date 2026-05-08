@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.5',
+        version: '1.2.6',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -56,21 +56,22 @@ async function main() {
                 <html lang="en">
                 <head>
                     <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CinePro ArtPlayer</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                    <title>CinePro Premium Player</title>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        #artplayer { width: 100vw; height: 100vh; }
+                        /* Full Screen Player Fix */
+                        #artplayer { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
-                        .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
+                        .spinner { width: 45px; height: 45px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 10px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 11px; letter-spacing: 2px; opacity: 0.7; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">Syncing ArtPlayer Engine...</div>
+                        <div id="status">INITIALIZING PREMIUM ENGINE...</div>
                     </div>
 
                     <div id="artplayer"></div>
@@ -99,8 +100,6 @@ async function main() {
                                 }
 
                                 const streamUrl = data.sources[0].url;
-                                
-                                // Subtitle Formatting for ArtPlayer
                                 const artSubtitles = (data.subtitles || []).map((sub, index) => ({
                                     html: sub.language || sub.label || \`Subtitle \${index + 1}\`,
                                     url: sub.url,
@@ -116,36 +115,24 @@ async function main() {
                                     autoSize: true,
                                     fullscreen: true,
                                     fullscreenWeb: true,
-                                    pip: true,
                                     setting: true,
-                                    loop: false,
-                                    flip: true,
+                                    pip: true,
                                     playbackRate: true,
                                     aspectRatio: true,
-                                    subtitleOffset: true,
-                                    miniProgressBar: true,
+                                    setting: true,
+                                    hotkey: true,
+                                    pip: true,
                                     mutex: true,
                                     backdrop: true,
                                     playsInline: true,
                                     autoPlayback: true,
                                     airplay: true,
-                                    customType: {
-                                        m3u8: function (video, url) {
-                                            if (Hls.isSupported()) {
-                                                const hls = new Hls();
-                                                hls.loadSource(url);
-                                                hls.attachMedia(video);
-                                                window.hls = hls;
-                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                                video.src = url;
-                                            }
-                                        },
-                                    },
-                                    subtitle: {
-                                        url: artSubtitles.length > 0 ? artSubtitles[0].url : '',
-                                        type: 'vtt',
-                                        style: { color: '#fff', fontSize: '24px' },
-                                        escape: false,
+                                    lock: true, // Screen lock for mobile
+                                    fastForward: true,
+                                    autoOrientation: true,
+                                    // Security: Hide Video Info to protect main source
+                                    videoAttributes: {
+                                        crossOrigin: 'anonymous',
                                     },
                                     settings: [
                                         {
@@ -159,22 +146,57 @@ async function main() {
                                             },
                                         }
                                     ],
+                                    customType: {
+                                        m3u8: function (video, url) {
+                                            if (Hls.isSupported()) {
+                                                const hls = new Hls();
+                                                hls.loadSource(url);
+                                                hls.attachMedia(video);
+                                                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                                                    // Quality selector outside settings
+                                                    const levels = hls.levels;
+                                                    const qualitySelector = levels.map((l, i) => ({
+                                                        html: l.height + 'P',
+                                                        index: i,
+                                                        default: i === levels.length - 1
+                                                    }));
+                                                    
+                                                    art.controls.add({
+                                                        position: 'right',
+                                                        html: 'QUALITY',
+                                                        style: { marginRight: '10px', fontSize: '12px' },
+                                                        selector: qualitySelector,
+                                                        onSelect: function (item) {
+                                                            hls.currentLevel = item.index;
+                                                            return item.html;
+                                                        }
+                                                    });
+                                                });
+                                                window.hls = hls;
+                                            }
+                                        },
+                                    },
+                                    subtitle: {
+                                        url: artSubtitles.length > 0 ? artSubtitles[0].url : '',
+                                        style: { color: '#fff', fontSize: '22px' },
+                                    }
                                 });
 
+                                // Hide Info and Context Menu to secure Source
                                 art.on('ready', () => {
                                     loader.style.display = 'none';
+                                    // Remove Video Info element if it exists
+                                    const infoBtn = document.querySelector('.art-info');
+                                    if(infoBtn) infoBtn.style.display = 'none';
                                 });
 
-                                art.on('error', (err) => {
-                                    console.log('Player Error:', err);
-                                    status.innerText = "STREAM ERROR";
-                                });
+                                // Disable right click
+                                art.container.addEventListener('contextmenu', (e) => e.preventDefault());
 
                             } catch (err) {
                                 status.innerText = "CONNECTION ERROR";
                             }
                         }
-
                         initPlayer();
                     </script>
                 </body>
