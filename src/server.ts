@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.1',
+        version: '1.2.2',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -80,7 +80,7 @@ async function main() {
                     </div>
 
                     <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls crossorigin></video>
+                        <video id="player" playsinline controls crossorigin="anonymous"></video>
                     </div>
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
@@ -94,7 +94,6 @@ async function main() {
                             const s = "${season || ''}";
                             const e = "${episode || ''}";
                             
-                            // Render Log onusare Series Endpoint thik kora holo
                             let apiPath = (s && e) 
                                 ? \`/v1/tv/\${"${movieId}"}/seasons/\${s}/episodes/\${e}\` 
                                 : \`/v1/movies/\${"${movieId}"}\`;
@@ -110,16 +109,15 @@ async function main() {
 
                                 const source = data.sources[0].url;
 
-                                // Subtitle display fix
-                                if (data.subtitles) {
+                                // Subtitle display logic (Fixed)
+                                if (data.subtitles && data.subtitles.length > 0) {
                                     data.subtitles.forEach((sub, index) => {
                                         const track = document.createElement('track');
                                         track.kind = 'captions';
                                         track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
                                         track.srclang = sub.lang || 'en';
                                         track.src = sub.url;
-                                        // Specific language selection if needed
-                                        if(index === 0) track.default = true; 
+                                        if(index === 0) track.setAttribute('default', '');
                                         video.appendChild(track);
                                     });
                                 }
@@ -128,6 +126,7 @@ async function main() {
                                     autoplay: true,
                                     controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
                                     settings: ['captions', 'quality', 'speed', 'audio'],
+                                    captions: { active: true, update: true, language: 'auto' },
                                     speed: { selected: 1, options: [0.5, 1, 1.5, 2] }
                                 };
 
@@ -147,14 +146,14 @@ async function main() {
                                                 else window.hls.levels.forEach((l, i) => { if(l.height === q) window.hls.currentLevel = i; });
                                             }
                                         };
-                                        new Plyr(video, plyrOptions);
+                                        const player = new Plyr(video, plyrOptions);
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
                                     });
                                     window.hls = hls;
                                 } else {
                                     video.src = source;
-                                    new Plyr(video, plyrOptions);
+                                    const player = new Plyr(video, plyrOptions);
                                     video.onloadedmetadata = () => {
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
