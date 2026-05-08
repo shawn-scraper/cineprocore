@@ -51,23 +51,35 @@ async function main() {
             
             reply.type('text/html').send(`
                 <!DOCTYPE html>
-                <html>
+                <html lang="en">
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CinePro Smooth Player</title>
+                    <title>CinePro Premium Player</title>
                     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
-                        body { margin: 0; background: #000; height: 100vh; display: flex; align-items: center; justify-content: center; }
-                        .container { width: 100%; max-width: 1000px; }
-                        #status-msg { position: absolute; color: white; font-family: sans-serif; z-index: 10; }
+                        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+                        .plyr-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+                        video { width: 100% !important; height: 100% !important; object-fit: contain; }
+                        #status-msg { 
+                            position: fixed; 
+                            color: #e50914; 
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                            font-size: 1.2rem;
+                            font-weight: bold;
+                            text-transform: uppercase;
+                            letter-spacing: 2px;
+                            z-index: 100;
+                            text-align: center;
+                        }
+                        .plyr--video { height: 100% !important; width: 100% !important; }
                     </style>
                 </head>
                 <body>
-                    <div id="status-msg">Initializing Stream...</div>
-                    <div class="container">
-                        <video id="player" playsinline controls></video>
+                    <div id="status-msg">Initializing CinePro Stream...</div>
+                    <div class="plyr-container">
+                        <video id="player" playsinline controls crossorigin></video>
                     </div>
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
@@ -82,31 +94,35 @@ async function main() {
 
                                 if (data.sources && data.sources.length > 0) {
                                     const sourceUrl = data.sources[0].url;
-                                    msg.style.display = 'none';
 
                                     if (sourceUrl.includes('m3u8')) {
                                         const hls = new Hls({
-                                            maxBufferLength: 30, // Buffering komate help korbe
-                                            capLevelToPlayerSize: true
+                                            maxBufferLength: 60,
+                                            enableWorker: true
                                         });
                                         hls.loadSource(sourceUrl);
                                         hls.attachMedia(video);
+                                        hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                            msg.style.display = 'none';
+                                            video.play().catch(() => { msg.innerText = "Click to Play"; });
+                                        });
                                         window.hls = hls;
                                     } else {
                                         video.src = sourceUrl;
+                                        video.onloadeddata = () => { msg.style.display = 'none'; };
                                     }
 
                                     const player = new Plyr(video, {
                                         autoplay: true,
-                                        invertTime: false,
-                                        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
+                                        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
+                                        tooltips: { controls: true, seek: true }
                                     });
                                 } else {
-                                    msg.innerText = "Error: No Sources Found";
+                                    msg.innerText = "Error: Content Not Found";
                                 }
                             } catch (err) {
                                 console.error(err);
-                                msg.innerText = "Error: Connection Failed";
+                                msg.innerText = "Error: Server Connection Failed";
                             }
                         }
                         start();
