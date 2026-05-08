@@ -76,11 +76,11 @@ async function main() {
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">INITIALIZING STREAM...</div>
+                        <div id="status">SYNCING CONTENT...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls crossorigin="anonymous"></video>
+                        <video id="player" playsinline controls crossorigin></video>
                     </div>
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
@@ -94,19 +94,14 @@ async function main() {
                             const s = "${season || ''}";
                             const e = "${episode || ''}";
                             
-                            // Framework onusare endpoint '/v1/tv/' hote pare serieser jonno
-                            let apiPath = (s && e) ? \`/v1/tv/\${"${movieId}"}/\${s}/\${e}\` : \`/v1/movies/\${"${movieId}"}\`;
+                            // Render Log onusare Series Endpoint thik kora holo
+                            let apiPath = (s && e) 
+                                ? \`/v1/tv/\${"${movieId}"}/seasons/\${s}/episodes/\${e}\` 
+                                : \`/v1/movies/\${"${movieId}"}\`;
 
                             try {
                                 let res = await fetch(apiPath);
                                 let data = await res.json();
-
-                                // Fallback: Jodi tv endpoint kaj na kore, series check korbe
-                                if ((!data.sources || data.sources.length === 0) && s && e) {
-                                    apiPath = \`/v1/series/\${"${movieId}"}/\${s}/\${e}\`;
-                                    res = await fetch(apiPath);
-                                    data = await res.json();
-                                }
 
                                 if (!data.sources || data.sources.length === 0) {
                                     status.innerText = "SOURCE NOT FOUND";
@@ -115,15 +110,16 @@ async function main() {
 
                                 const source = data.sources[0].url;
 
-                                // Subtitle Logic: Provider ja dibe tai show korbe
-                                if (data.subtitles && data.subtitles.length > 0) {
+                                // Subtitle display fix
+                                if (data.subtitles) {
                                     data.subtitles.forEach((sub, index) => {
                                         const track = document.createElement('track');
                                         track.kind = 'captions';
-                                        // Priority: language > label > index based naming
                                         track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
                                         track.srclang = sub.lang || 'en';
                                         track.src = sub.url;
+                                        // Specific language selection if needed
+                                        if(index === 0) track.default = true; 
                                         video.appendChild(track);
                                     });
                                 }
@@ -136,7 +132,7 @@ async function main() {
                                 };
 
                                 if (Hls.isSupported() && (source.includes('m3u8') || source.includes('manifest'))) {
-                                    const hls = new Hls();
+                                    const hls = new Hls({ xhrSetup: (xhr) => { xhr.withCredentials = false; } });
                                     hls.loadSource(source);
                                     hls.attachMedia(video);
                                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
