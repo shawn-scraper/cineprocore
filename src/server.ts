@@ -48,67 +48,108 @@ async function main() {
     if (fastify) {
         fastify.get('/play/:id', async (request: any, reply: any) => {
             const movieId = request.params.id;
-
+            
             reply.type('text/html').send(`
                 <!DOCTYPE html>
-                <html>
+                <html lang="en">
                 <head>
                     <meta charset="UTF-8">
                     <title>CinePro Premium Player</title>
-
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
-
                     <style>
-                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
-                        #player { width: 100%; height: 100%; }
+                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; font-family: sans-serif; }
+                        .artplayer-app { width: 100vw; height: 100vh; }
+                        #loading-overlay {
+                            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                            background: #000; display: flex; flex-direction: column;
+                            justify-content: center; align-items: center; z-index: 999; color: #fff;
+                        }
+                        .spinner {
+                            border: 4px solid rgba(255, 255, 255, 0.1);
+                            border-left-color: #e50914;
+                            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+                        }
+                        @keyframes spin { to { transform: rotate(360deg); } }
+                        #status { margin-top: 20px; font-size: 14px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; text-align: center; padding: 0 20px; }
                     </style>
                 </head>
                 <body>
-
-                    <div id="player"></div>
+                    <div id="loading-overlay">
+                        <div class="spinner"></div>
+                        <div id="status">Connecting to CinePro Server...</div>
+                    </div>
+                    <div class="artplayer-app"></div>
 
                     <script>
-                        async function load() {
+                        const status = document.getElementById('status');
+                        const loader = document.getElementById('loading-overlay');
+
+                        async function init() {
                             try {
-                                const res = await fetch("/v1/movies/${movieId}");
+                                status.innerText = "Searching high-speed servers...";
+                                
+                                // Direct Absolute URL to prevent path issues
+                                const apiUrl = window.location.origin + "/v1/movies/${movieId}";
+                                const res = await fetch(apiUrl);
+                                
+                                if (!res.ok) throw new Error("API Response Error: " + res.status);
+                                
                                 const data = await res.json();
 
-                                if (!data.sources || data.sources.length === 0) return;
+                                if (!data.sources || data.sources.length === 0) {
+                                    status.innerText = "❌ No streaming sources found for this ID!";
+                                    document.querySelector('.spinner').style.display = 'none';
+                                    return;
+                                }
 
-                                const src = data.sources[0].url;
+                                status.innerText = "Optimizing playback quality...";
 
-                                new Artplayer({
-                                    container: '#player',
-                                    url: src,
-                                    autoplay: true,
-                                    fullscreen: true,
+                                const qualities = data.sources.map(s => ({
+                                    html: s.quality || 'Auto',
+                                    url: s.url,
+                                    isHls: s.url.includes('m3u8') || s.type === 'hls'
+                                }));
+
+                                const art = new ArtPlayer({
+                                    container: '.artplayer-app',
+                                    url: qualities[0].url,
+                                    type: qualities[0].isHls ? 'm3u8' : 'mp4',
                                     setting: true,
+                                    fullscreen: true,
                                     pip: true,
                                     playbackRate: true,
                                     aspectRatio: true,
-                                    screenshot: true,
+                                    quality: qualities,
+                                    autoPlayback: true,
                                     customType: {
                                         m3u8: function (video, url) {
                                             if (Hls.isSupported()) {
                                                 const hls = new Hls();
                                                 hls.loadSource(url);
                                                 hls.attachMedia(video);
-                                            } else {
+                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                                                 video.src = url;
                                             }
-                                        }
-                                    }
+                                        },
+                                    },
+                                });
+
+                                art.on('ready', () => {
+                                    loader.style.display = 'none';
+                                    art.play().catch(() => {
+                                        status.innerText = "Click to play"; // Mobile/Safari user interaction needed
+                                    });
                                 });
 
                             } catch (e) {
-                                console.error(e);
+                                console.error("Player Init Error:", e);
+                                status.innerText = "⚠️ Server Connection Failed! Please refresh.";
+                                document.querySelector('.spinner').style.display = 'none';
                             }
                         }
-
-                        load();
+                        init();
                     </script>
-
                 </body>
                 </html>
             `);
