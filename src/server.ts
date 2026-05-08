@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.2',
+        version: '1.2.3', // Version updated for tracking
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -109,25 +109,29 @@ async function main() {
 
                                 const source = data.sources[0].url;
 
-                                // Subtitle display logic (Fixed)
-                                if (data.subtitles && data.subtitles.length > 0) {
-                                    data.subtitles.forEach((sub, index) => {
-                                        const track = document.createElement('track');
-                                        track.kind = 'captions';
-                                        track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
-                                        track.srclang = sub.lang || 'en';
-                                        track.src = sub.url;
-                                        if(index === 0) track.setAttribute('default', '');
-                                        video.appendChild(track);
-                                    });
-                                }
-
                                 const plyrOptions = {
                                     autoplay: true,
                                     controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
-                                    settings: ['captions', 'quality', 'speed', 'audio'],
+                                    settings: ['captions', 'quality', 'speed'],
                                     captions: { active: true, update: true, language: 'auto' },
                                     speed: { selected: 1, options: [0.5, 1, 1.5, 2] }
+                                };
+
+                                // Function to attach tracks properly after Plyr init
+                                const attachSubtitles = (player) => {
+                                    if (data.subtitles && data.subtitles.length > 0) {
+                                        data.subtitles.forEach((sub, index) => {
+                                            const track = document.createElement('track');
+                                            track.kind = 'captions';
+                                            track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
+                                            track.srclang = sub.lang || 'en';
+                                            track.src = sub.url;
+                                            if(index === 0) track.default = true;
+                                            video.appendChild(track);
+                                        });
+                                        // Force Plyr to refresh tracks
+                                        setTimeout(() => { player.source = player.source; }, 500);
+                                    }
                                 };
 
                                 if (Hls.isSupported() && (source.includes('m3u8') || source.includes('manifest'))) {
@@ -147,6 +151,7 @@ async function main() {
                                             }
                                         };
                                         const player = new Plyr(video, plyrOptions);
+                                        attachSubtitles(player);
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
                                     });
@@ -154,6 +159,7 @@ async function main() {
                                 } else {
                                     video.src = source;
                                     const player = new Plyr(video, plyrOptions);
+                                    attachSubtitles(player);
                                     video.onloadedmetadata = () => {
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
