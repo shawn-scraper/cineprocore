@@ -43,7 +43,6 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- CUSTOM PREMIUM PLAYER ROUTE ---
     const fastify = (server as any).app || (server as any).instance;
 
     if (fastify) {
@@ -56,61 +55,61 @@ async function main() {
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CinePro Player</title>
+                    <title>CinePro Smooth Player</title>
+                    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                     <style>
-                        body { margin: 0; background: #000; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-                        .artplayer-app { width: 100vw; height: 100vh; }
+                        body { margin: 0; background: #000; height: 100vh; display: flex; align-items: center; justify-content: center; }
+                        .container { width: 100%; max-width: 1000px; }
+                        #status-msg { position: absolute; color: white; font-family: sans-serif; z-index: 10; }
                     </style>
                 </head>
                 <body>
-                    <div class="artplayer-app"></div>
-                    <script>
-                        async function loadPlayer() {
-                            try {
-                                const res = await fetch("/v1/movies/${movieId}");
-                                const data = await res.json();
-                                
-                                if (data.sources && data.sources.length > 0) {
-                                    const qualities = data.sources.map(s => ({
-                                        html: s.quality || 'Auto',
-                                        url: s.url,
-                                    }));
+                    <div id="status-msg">Initializing Stream...</div>
+                    <div class="container">
+                        <video id="player" playsinline controls></video>
+                    </div>
 
-                                    const art = new ArtPlayer({
-                                        container: '.artplayer-app',
-                                        url: qualities[0].url,
-                                        type: qualities[0].url.includes('m3u8') ? 'm3u8' : 'mp4',
-                                        autoSize: true,
-                                        fullscreen: true,
-                                        fullscreenWeb: true,
-                                        setting: true,
-                                        pip: true,
-                                        playbackRate: true,
-                                        aspectRatio: true,
-                                        quality: qualities,
-                                        customType: {
-                                            m3u8: function (video, url) {
-                                                if (Hls.isSupported()) {
-                                                    const hls = new Hls();
-                                                    hls.loadSource(url);
-                                                    hls.attachMedia(video);
-                                                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                                    video.src = url;
-                                                }
-                                            },
-                                        },
+                    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+                    <script>
+                        async function start() {
+                            const msg = document.getElementById('status-msg');
+                            const video = document.getElementById('player');
+                            
+                            try {
+                                const response = await fetch("/v1/movies/${movieId}");
+                                const data = await response.json();
+
+                                if (data.sources && data.sources.length > 0) {
+                                    const sourceUrl = data.sources[0].url;
+                                    msg.style.display = 'none';
+
+                                    if (sourceUrl.includes('m3u8')) {
+                                        const hls = new Hls({
+                                            maxBufferLength: 30, // Buffering komate help korbe
+                                            capLevelToPlayerSize: true
+                                        });
+                                        hls.loadSource(sourceUrl);
+                                        hls.attachMedia(video);
+                                        window.hls = hls;
+                                    } else {
+                                        video.src = sourceUrl;
+                                    }
+
+                                    const player = new Plyr(video, {
+                                        autoplay: true,
+                                        invertTime: false,
+                                        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen']
                                     });
                                 } else {
-                                    document.body.innerHTML = "<h2 style='color:white'>No Source Found!</h2>";
+                                    msg.innerText = "Error: No Sources Found";
                                 }
-                            } catch (e) { 
-                                console.error(e);
-                                document.body.innerHTML = "<h2 style='color:white'>Server Connection Error!</h2>";
+                            } catch (err) {
+                                console.error(err);
+                                msg.innerText = "Error: Connection Failed";
                             }
                         }
-                        loadPlayer();
+                        start();
                     </script>
                 </body>
                 </html>
