@@ -60,27 +60,21 @@ async function main() {
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        
-                        /* Full Screen Player Fix */
                         .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease; }
                         .plyr-container.ready { opacity: 1; }
                         .plyr--video { height: 100vh !important; width: 100vw !important; }
-
-                        /* Subtitle List Scroll Fix */
                         .plyr__menu__container [role="menu"] { max-height: 250px; overflow-y: auto; }
-
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
                         .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                         #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 12px; letter-spacing: 2px; opacity: 0.7; }
-                        
                         :root { --plyr-color-main: #e50914; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">SYNCING MULTI-AUDIO & SUBTITLES...</div>
+                        <div id="status">SYNCING MULTI-AUDIO & QUALITY...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
@@ -101,7 +95,6 @@ async function main() {
 
                                 const source = data.sources[0].url;
 
-                                // Subtitles dynamic load
                                 if (data.subtitles) {
                                     data.subtitles.forEach((s) => {
                                         const track = document.createElement('track');
@@ -126,20 +119,30 @@ async function main() {
                                     hls.attachMedia(video);
                                     
                                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                                        // Quality & Audio Detect
-                                        const qualities = hls.levels.map(l => l.height).unshift(0);
-                                        plyrOptions.quality = { default: 0, options: qualities, forced: true, onChange: (q) => {
-                                            if(q === 0) hls.currentLevel = -1;
-                                            else hls.levels.forEach((l, i) => { if(l.height === q) hls.currentLevel = i; });
-                                        }};
+                                        // Quality Detect
+                                        const qualities = hls.levels.map(l => l.height);
+                                        qualities.unshift(0); // Auto
+
+                                        plyrOptions.quality = {
+                                            default: 0,
+                                            options: qualities,
+                                            forced: true,
+                                            onChange: (q) => {
+                                                if(q === 0) window.hls.currentLevel = -1;
+                                                else window.hls.levels.forEach((l, i) => { if(l.height === q) window.hls.currentLevel = i; });
+                                            }
+                                        };
 
                                         const player = new Plyr(video, plyrOptions);
-                                        
-                                        // Audio track detect and update
-                                        player.on('ready', () => {
+
+                                        // Audio Track Detect
+                                        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
                                             const audioTracks = hls.audioTracks;
                                             if (audioTracks.length > 1) {
-                                                // Plyr handle audio via settings automatically if tracks are available
+                                                // Audio selection logic inside Plyr menu
+                                                player.on('ready', () => {
+                                                    // HLS handles the actual switching when the browser/Plyr requests tracks
+                                                });
                                             }
                                         });
 
