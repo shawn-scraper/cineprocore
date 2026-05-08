@@ -12,7 +12,7 @@ async function main() {
     const server = new OMSSServer({
         name: 'CinePro',
         version: '1.0.0',
-        host: process.env.HOST ?? '0.0.0.0', // Render-er jonno 0.0.0.0 deya bhalo
+        host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: process.env.PUBLIC_URL,
 
@@ -53,32 +53,31 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- UPDATED APP ACCESS LOGIC ---
-    // Framework-er bhetor theke Express app instance khuje ber kora
+    // --- ARTPLAYER CUSTOM ROUTES ---
     const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
 
     if (app) {
-        // Movie Player
+        // Direct Movie Player Route
         app.get('/v1/play/movie/:id', async (req: any, res: any) => {
             const id = req.params.id;
-            const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/movies/${id}`;
-            renderPlayer(res, streamApiUrl, `Movie ${id}`);
+            const apiPath = `/v1/movies/${id}`;
+            renderPlayer(res, apiPath, `Movie ${id}`);
         });
 
-        // TV Player
+        // Direct TV Player Route
         app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
             const { id, s, e } = req.params;
-            const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/tv/${id}/${s}/${e}`;
-            renderPlayer(res, streamApiUrl, `TV Series ${id} - S${s}E${e}`);
+            const apiPath = `/v1/tv/${id}/${s}/${e}`;
+            renderPlayer(res, apiPath, `TV Series ${id} - S${s}E${e}`);
         });
     }
 
-    function renderPlayer(res: any, apiUrl: string, title: string) {
+    function renderPlayer(res: any, apiPath: string, title: string) {
         res.send(`
             <!DOCTYPE html>
             <html>
             <head>
-                <title>${title}</title>
+                <title>${title} | Lumina Player</title>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
@@ -93,13 +92,19 @@ async function main() {
                 <script>
                     async function initPlayer() {
                         try {
-                            const response = await fetch('${apiUrl}');
-                            const data = await response.json();
-                            // OMSS framework e 'sources' thake
-                            const m3u8Url = data.sources && data.sources[0] ? data.sources[0].url : '';
+                            const baseUrl = window.location.origin;
+                            const fullApiUrl = baseUrl + '${apiPath}';
                             
+                            const response = await fetch(fullApiUrl);
+                            const data = await response.json();
+                            
+                            let m3u8Url = '';
+                            if (data.sources && data.sources.length > 0) {
+                                m3u8Url = data.sources[0].url;
+                            }
+
                             if(!m3u8Url) {
-                                document.body.innerHTML = '<div style="color:white;text-align:center;padding-top:20%;font-family:sans-serif;"><h2>No Stream Found!</h2><p>Please check the API response for movie ID.</p></div>';
+                                document.body.innerHTML = '<div style="color:white;text-align:center;padding-top:20%;font-family:sans-serif;"><h2>Stream link not found!</h2><p>Server-er details check korun.</p></div>';
                                 return;
                             }
 
@@ -109,12 +114,15 @@ async function main() {
                                 type: 'm3u8',
                                 title: '${title}',
                                 autoplay: true,
+                                volume: 0.8,
                                 pip: true,
                                 screenshot: true,
                                 setting: true,
                                 playbackRate: true,
                                 aspectRatio: true,
                                 fullscreen: true,
+                                fullscreenWeb: true,
+                                autoSize: true,
                                 customType: {
                                     m3u8: function (video, url) {
                                         if (Hls.isSupported()) {
@@ -127,7 +135,9 @@ async function main() {
                                     },
                                 },
                             });
-                        } catch (err) { console.error(err); }
+                        } catch (err) { 
+                            console.error('Player Error:', err);
+                        }
                     }
                     initPlayer();
                 </script>
