@@ -37,7 +37,7 @@ async function main() {
         },
 
         cors: {
-            origin: '*',
+            origin: '*', // Sob domain allow kora holo
             methods: ['GET', 'OPTIONS']
         },
 
@@ -56,84 +56,83 @@ async function main() {
     const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
 
     if (app) {
-        app.get('/v1/play/movie/:id', async (req: any, res: any) => {
+        // Player Routes
+        app.get('/v1/play/movie/:id', (req: any, res: any) => {
             renderPlayer(res, `/v1/movies/${req.params.id}`, `Movie ${req.params.id}`);
         });
 
-        app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
+        app.get('/v1/play/tv/:id/:s/:e', (req: any, res: any) => {
             renderPlayer(res, `/v1/tv/${req.params.id}/${req.params.s}/${req.params.e}`, `TV S${req.params.s}E${req.params.e}`);
         });
     }
 
     function renderPlayer(res: any, apiPath: string, title: string) {
-        try {
-            // Header set korar aro safe way
-            if (res.setHeader) {
-                res.setHeader('Content-Type', 'text/html');
-            } else if (res.type) {
-                res.type('html');
-            }
+        res.setHeader('Content-Type', 'text/html');
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <title>${title}</title>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                <style>
+                    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; display: flex; justify-content: center; align-items: center; }
+                    #artplayer { width: 100%; height: 100%; }
+                </style>
+            </head>
+            <body>
+                <div id="artplayer"></div>
+                <script>
+                    async function loadStream() {
+                        try {
+                            const apiUrl = window.location.origin + '${apiPath}';
+                            const response = await fetch(apiUrl);
+                            const data = await response.json();
+                            
+                            // Check if sources exist
+                            const streamUrl = data.sources?.[0]?.url;
 
-            res.send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>${title}</title>
-                    <meta charset="UTF-8" />
-                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
-                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-                    <style>
-                        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        #artplayer { width: 100vw; height: 100vh; }
-                    </style>
-                </head>
-                <body>
-                    <div id="artplayer"></div>
-                    <script>
-                        async function initPlayer() {
-                            try {
-                                const response = await fetch(window.location.origin + '${apiPath}');
-                                const data = await response.json();
-                                const m3u8Url = data.sources?.[0]?.url;
+                            if (!streamUrl) {
+                                document.body.innerHTML = '<h2 style="color:white; font-family:sans-serif;">No stream link found from server!</h2>';
+                                return;
+                            }
 
-                                if(!m3u8Url) {
-                                    document.body.innerHTML = '<h2 style="color:white;text-align:center;padding-top:20%;">Stream link not found!</h2>';
-                                    return;
+                            const art = new ArtPlayer({
+                                container: '#artplayer',
+                                url: streamUrl,
+                                type: 'm3u8',
+                                title: '${title}',
+                                autoplay: true,
+                                pip: true,
+                                screenshot: true,
+                                setting: true,
+                                fullscreen: true,
+                                fullscreenWeb: true,
+                                theme: '#ff0057',
+                                customType: {
+                                    m3u8: function(video, url) {
+                                        if (Hls.isSupported()) {
+                                            const hls = new Hls();
+                                            hls.loadSource(url);
+                                            hls.attachMedia(video);
+                                        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                            video.src = url;
+                                        }
+                                    }
                                 }
-
-                                new ArtPlayer({
-                                    container: '#artplayer',
-                                    url: m3u8Url,
-                                    type: 'm3u8',
-                                    autoplay: true,
-                                    pip: true,
-                                    screenshot: true,
-                                    setting: true,
-                                    fullscreen: true,
-                                    fullscreenWeb: true,
-                                    customType: {
-                                        m3u8: function (video, url) {
-                                            if (Hls.isSupported()) {
-                                                const hls = new Hls();
-                                                hls.loadSource(url);
-                                                hls.attachMedia(video);
-                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                                video.src = url;
-                                            }
-                                        },
-                                    },
-                                });
-                            } catch (err) { console.error('Fetch Error:', err); }
+                            });
+                        } catch (e) {
+                            console.error("Player Error:", e);
+                            document.body.innerHTML = '<h2 style="color:white; font-family:sans-serif;">Error loading API. Check Console.</h2>';
                         }
-                        initPlayer();
-                    </script>
-                </body>
-                </html>
-            `);
-        } catch (error) {
-            console.error('Render Error:', error);
-            res.status(500).send("Internal Player Error");
-        }
+                    }
+                    loadStream();
+                </script>
+            </body>
+            </html>
+        `);
     }
 
     await server.start();
