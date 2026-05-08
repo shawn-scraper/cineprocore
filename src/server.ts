@@ -56,18 +56,17 @@ async function main() {
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>CinePro Premium Player</title>
-                    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.css" />
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.4s ease; }
-                        .plyr-container.ready { opacity: 1; }
                         #loader { position: fixed; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; }
                         .spinner { width: 45px; height: 45px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 15px; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                         #status-text { color: #fff; font-family: sans-serif; font-size: 13px; letter-spacing: 1.5px; opacity: 0.8; }
-                        .plyr--video { height: 100% !important; }
-                        :root { --plyr-color-main: #e50914; }
+                        #player-box { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.4s ease; }
+                        #player-box.ready { opacity: 1; }
                     </style>
                 </head>
                 <body>
@@ -76,14 +75,10 @@ async function main() {
                         <div id="status-text">PREPARING CINEMATIC EXPERIENCE...</div>
                     </div>
 
-                    <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls crossorigin></video>
-                    </div>
+                    <div id="player-box"></div>
 
-                    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
                     <script>
                         async function initPlayer() {
-                            const video = document.getElementById('player');
                             const loader = document.getElementById('loader');
                             const playerBox = document.getElementById('player-box');
 
@@ -98,57 +93,39 @@ async function main() {
 
                                 const source = data.sources[0].url;
 
-                                // Subtitles set kora (jodi API theke ashe)
-                                if (data.subtitles) {
-                                    data.subtitles.forEach((sub, index) => {
-                                        const track = document.createElement('track');
-                                        track.kind = 'captions';
-                                        track.label = sub.language || 'Subtitle ' + (index + 1);
-                                        track.srclang = sub.lang || 'en';
-                                        track.src = sub.url;
-                                        if (index === 0) track.default = true;
-                                        video.appendChild(track);
-                                    });
-                                }
-
-                                const defaultOptions = {
+                                const art = new Artplayer({
+                                    container: '#player-box',
+                                    url: source,
                                     autoplay: true,
-                                    quality: { default: 720, options: [1080, 720, 480, 360] },
-                                    speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-                                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
-                                    settings: ['captions', 'quality', 'speed'],
-                                    tooltips: { controls: true, seek: true },
-                                    keyboard: { focused: true, global: true }
-                                };
+                                    fullscreen: true,
+                                    autoSize: true,
+                                    autoMini: true,
+                                    setting: true,
+                                    hotkey: true,
+                                    pip: true,
+                                    mutex: true,
+                                    fullscreenWeb: true,
+                                    quality: [
+                                        { html: '1080p', url: source, default: true },
+                                        { html: '720p', url: source },
+                                        { html: '480p', url: source },
+                                        { html: '360p', url: source },
+                                    ],
+                                    subtitle: data.subtitles && data.subtitles.length > 0 ? {
+                                        url: data.subtitles[0].url,
+                                        type: 'vtt',
+                                        encoding: 'utf-8',
+                                    } : null,
+                                    playbackRate: true,
+                                    controls: true,
+                                    theme: '#e50914',
+                                });
 
-                                if (source.includes('m3u8')) {
-                                    const hls = new Hls({
-                                        maxBufferLength: 40,
-                                        enableWorker: true,
-                                        lowLatencyMode: true
-                                    });
-                                    hls.loadSource(source);
-                                    hls.attachMedia(video);
-                                    
-                                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                                        const player = new Plyr(video, defaultOptions);
-                                        loader.style.display = 'none';
-                                        playerBox.classList.add('ready');
-                                        
-                                        // Quality update handle
-                                        player.on('qualitychange', (event) => {
-                                            if (window.hls) window.hls.currentLevel = event.detail.quality;
-                                        });
-                                    });
-                                    window.hls = hls;
-                                } else {
-                                    video.src = source;
-                                    const player = new Plyr(video, defaultOptions);
-                                    video.onloadeddata = () => {
-                                        loader.style.display = 'none';
-                                        playerBox.classList.add('ready');
-                                    };
-                                }
+                                art.on('ready', () => {
+                                    loader.style.display = 'none';
+                                    playerBox.classList.add('ready');
+                                });
+
                             } catch (e) {
                                 console.error(e);
                                 document.getElementById('status-text').innerText = "CONNECTION FAILED";
