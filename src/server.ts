@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.0',
+        version: '1.2.1',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -65,28 +65,22 @@ async function main() {
                         .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease; }
                         .plyr-container.ready { opacity: 1; }
                         .plyr--video { height: 100vh !important; width: 100vw !important; }
-                        
-                        /* Subtitle Box Fix */
-                        .plyr__menu__container [role="menu"] { 
-                            max-height: 220px !important; 
-                            overflow-y: auto !important; 
-                        }
-                        
+                        .plyr__menu__container [role="menu"] { max-height: 220px !important; overflow-y: auto !important; }
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
                         .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 11px; letter-spacing: 2px; opacity: 0.7; text-transform: uppercase; }
+                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 11px; letter-spacing: 2px; opacity: 0.7; }
                         :root { --plyr-color-main: #e50914; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">Syncing Content & Audio...</div>
+                        <div id="status">INITIALIZING STREAM...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls></video>
+                        <video id="player" playsinline controls crossorigin="anonymous"></video>
                     </div>
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
@@ -95,26 +89,39 @@ async function main() {
                             const video = document.getElementById('player');
                             const loader = document.getElementById('loader');
                             const playerBox = document.getElementById('player-box');
+                            const status = document.getElementById('status');
 
                             const s = "${season || ''}";
                             const e = "${episode || ''}";
-                            const apiPath = (s && e) ? \`/v1/series/\${"${movieId}"}/\${s}/\${e}\` : \`/v1/movies/\${"${movieId}"}\`;
+                            
+                            // Framework onusare endpoint '/v1/tv/' hote pare serieser jonno
+                            let apiPath = (s && e) ? \`/v1/tv/\${"${movieId}"}/\${s}/\${e}\` : \`/v1/movies/\${"${movieId}"}\`;
 
                             try {
-                                const res = await fetch(apiPath);
-                                const data = await res.json();
+                                let res = await fetch(apiPath);
+                                let data = await res.json();
+
+                                // Fallback: Jodi tv endpoint kaj na kore, series check korbe
+                                if ((!data.sources || data.sources.length === 0) && s && e) {
+                                    apiPath = \`/v1/series/\${"${movieId}"}/\${s}/\${e}\`;
+                                    res = await fetch(apiPath);
+                                    data = await res.json();
+                                }
+
                                 if (!data.sources || data.sources.length === 0) {
-                                    document.getElementById('status').innerText = "Source Not Found";
+                                    status.innerText = "SOURCE NOT FOUND";
                                     return;
                                 }
 
                                 const source = data.sources[0].url;
 
-                                if (data.subtitles) {
-                                    data.subtitles.forEach((sub) => {
+                                // Subtitle Logic: Provider ja dibe tai show korbe
+                                if (data.subtitles && data.subtitles.length > 0) {
+                                    data.subtitles.forEach((sub, index) => {
                                         const track = document.createElement('track');
                                         track.kind = 'captions';
-                                        track.label = sub.language || 'Unknown';
+                                        // Priority: language > label > index based naming
+                                        track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
                                         track.srclang = sub.lang || 'en';
                                         track.src = sub.url;
                                         video.appendChild(track);
@@ -129,17 +136,12 @@ async function main() {
                                 };
 
                                 if (Hls.isSupported() && (source.includes('m3u8') || source.includes('manifest'))) {
-                                    const hls = new Hls({ 
-                                        enableWorker: true,
-                                        lowLatencyMode: true 
-                                    });
+                                    const hls = new Hls();
                                     hls.loadSource(source);
                                     hls.attachMedia(video);
-                                    
                                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                                         const qualities = hls.levels.map(l => l.height);
-                                        qualities.unshift(0); // Auto
-
+                                        qualities.unshift(0);
                                         plyrOptions.quality = {
                                             default: 0,
                                             options: qualities,
@@ -149,15 +151,7 @@ async function main() {
                                                 else window.hls.levels.forEach((l, i) => { if(l.height === q) window.hls.currentLevel = i; });
                                             }
                                         };
-
-                                        const player = new Plyr(video, plyrOptions);
-
-                                        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-                                            if (hls.audioTracks.length > 1) {
-                                                player.on('ready', () => {});
-                                            }
-                                        });
-
+                                        new Plyr(video, plyrOptions);
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
                                     });
@@ -171,8 +165,7 @@ async function main() {
                                     };
                                 }
                             } catch (err) { 
-                                console.error(err);
-                                document.getElementById('status').innerText = "Loading Error";
+                                status.innerText = "CONNECTION ERROR";
                             }
                         }
                         start();
