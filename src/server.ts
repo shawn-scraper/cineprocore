@@ -43,8 +43,7 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- CUSTOM PLAYER ROUTE (Fastify Style) ---
-    // server.start() er AGEI eita korte hobe
+    // --- PREMIUM ARTPLAYER ROUTE ---
     const fastify = (server as any).app || (server as any).instance;
 
     if (fastify) {
@@ -53,37 +52,98 @@ async function main() {
             
             reply.type('text/html').send(`
                 <!DOCTYPE html>
-                <html>
+                <html lang="en">
                 <head>
                     <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>CinePro Premium Player</title>
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                     <style>
-                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
-                        video { width: 100%; height: 100%; }
+                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; font-family: sans-serif; }
+                        .artplayer-app { width: 100vw; height: 100vh; }
+                        #loading-overlay {
+                            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                            background: #000; display: flex; flex-direction: column;
+                            justify-content: center; align-items: center; z-index: 999; color: #fff;
+                        }
+                        .spinner {
+                            border: 4px solid rgba(255, 255, 255, 0.1);
+                            border-left-color: #e50914;
+                            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+                        }
+                        @keyframes spin { to { transform: rotate(360deg); } }
+                        #status { margin-top: 20px; font-size: 14px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
                     </style>
                 </head>
                 <body>
-                    <video id="video" controls autoplay crossorigin></video>
+
+                    <div id="loading-overlay">
+                        <div class="spinner"></div>
+                        <div id="status">Connecting to CinePro...</div>
+                    </div>
+
+                    <div class="artplayer-app"></div>
+
                     <script>
-                        const video = document.getElementById('video');
-                        async function load() {
+                        const status = document.getElementById('status');
+                        const loader = document.getElementById('loading-overlay');
+
+                        async function init() {
                             try {
+                                status.innerText = "Searching high-speed servers...";
+                                
                                 const res = await fetch("/v1/movies/${movieId}");
                                 const data = await res.json();
-                                if (data.sources && data.sources.length > 0) {
-                                    const src = data.sources[0].url;
-                                    if (Hls.isSupported()) {
-                                        const hls = new Hls();
-                                        hls.loadSource(src);
-                                        hls.attachMedia(video);
-                                    } else {
-                                        video.src = src;
-                                    }
+
+                                if (!data.sources || data.sources.length === 0) {
+                                    status.innerText = "❌ Content Not Found!";
+                                    document.querySelector('.spinner').style.display = 'none';
+                                    return;
                                 }
-                            } catch (e) { console.error(e); }
+
+                                status.innerText = "Loading video qualities...";
+
+                                const qualities = data.sources.map(s => ({
+                                    html: s.quality || 'Auto',
+                                    url: s.url,
+                                    isHls: s.url.includes('m3u8')
+                                }));
+
+                                const art = new ArtPlayer({
+                                    container: '.artplayer-app',
+                                    url: qualities[0].url,
+                                    type: qualities[0].isHls ? 'm3u8' : 'mp4',
+                                    setting: true,
+                                    fullscreen: true,
+                                    pip: true,
+                                    playbackRate: true,
+                                    aspectRatio: true,
+                                    quality: qualities,
+                                    customType: {
+                                        m3u8: function (video, url) {
+                                            if (Hls.isSupported()) {
+                                                const hls = new Hls();
+                                                hls.loadSource(url);
+                                                hls.attachMedia(video);
+                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                                video.src = url;
+                                            }
+                                        },
+                                    },
+                                });
+
+                                art.on('ready', () => {
+                                    loader.style.display = 'none';
+                                    art.play();
+                                });
+
+                            } catch (e) {
+                                console.error(e);
+                                status.innerText = "⚠️ Server Error!";
+                            }
                         }
-                        load();
+                        init();
                     </script>
                 </body>
                 </html>
@@ -91,7 +151,6 @@ async function main() {
         });
     }
 
-    // Shobar sheshe server start hobe
     await server.start();
 }
 
