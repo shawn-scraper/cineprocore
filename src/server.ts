@@ -1,145 +1,336 @@
-import { OMSSServer } from '@omss/framework';
-import 'dotenv/config';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-import { knownThirdPartyProxies } from './thirdPartyProxies.js';
-import { streamPatterns } from './streamPatterns.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-async function main() {
-    const server = new OMSSServer({
-        name: 'CinePro',
-        version: '1.0.0',
-        host: process.env.HOST ?? '0.0.0.0',
-        port: Number(process.env.PORT ?? 10000),
-        publicUrl: process.env.PUBLIC_URL,
-
-        cache: {
-            type: (process.env.CACHE_TYPE as 'memory' | 'redis') ?? 'memory',
-            ttl: { sources: 3600, subtitles: 86400 },
-            redis: {
-                host: process.env.REDIS_HOST ?? 'localhost',
-                port: Number(process.env.REDIS_PORT ?? 6379),
-                password: process.env.REDIS_PASSWORD
-            }
-        },
-
-        tmdb: {
-            apiKey: process.env.TMDB_API_KEY!,
-            cacheTTL: 86400
-        },
-
-        proxyConfig: {
-            knownThirdPartyProxies: knownThirdPartyProxies,
-            streamPatterns
-        },
-
-        cors: {
-            origin: '*',
-            methods: ['GET', 'OPTIONS']
-        },
-
-        stremio: {
-            enableNativeAddon: process.env.STREMIO_ADDON === 'true',
-            stremioAddons: [
-                { id: 'WebStreamerMBG', url: 'https://87d6a6ef6b58-webstreamrmbg-dev.baby-beamup.club/manifest.json', enabled: true },
-                { id: 'Streamify', url: 'https://stremify.hayd.uk/manifest.json', enabled: true }
-            ]
+function renderPlayer(res, apiPath, title) {
+    try {
+        if (res.setHeader) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        } else if (res.type) {
+            res.type('html');
         }
-    });
 
-    const registry = server.getRegistry();
-    await registry.discoverProviders(path.join(__dirname, './providers/'));
+        const safeTitle = String(title).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-    const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
+        res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>${safeTitle}</title>
 
-    if (app) {
-        app.get('/v1/play/movie/:id', async (req: any, res: any) => {
-            renderPlayer(res, `/v1/movies/${req.params.id}`, `Movie ${req.params.id}`);
-        });
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 
-        app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
-            renderPlayer(res, `/v1/tv/${req.params.id}/${req.params.s}/${req.params.e}`, `TV S${req.params.s}E${req.params.e}`);
-        });
-    }
+<script src="https://cdn.jsdelivr.net/npm/artplayer@5.2.3/dist/artplayer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
-    function renderPlayer(res: any, apiPath: string, title: string) {
-        try {
-            // Header set korar aro safe way
-            if (res.setHeader) {
-                res.setHeader('Content-Type', 'text/html');
-            } else if (res.type) {
-                res.type('html');
-            }
-
-            res.send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>${title}</title>
-                    <meta charset="UTF-8" />
-                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
-                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-                    <style>
-                        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        #artplayer { width: 100vw; height: 100vh; }
-                    </style>
-                </head>
-                <body>
-                    <div id="artplayer"></div>
-                    <script>
-                        async function initPlayer() {
-                            try {
-                                const response = await fetch(window.location.origin + '${apiPath}');
-                                const data = await response.json();
-                                const m3u8Url = data.sources?.[0]?.url;
-
-                                if(!m3u8Url) {
-                                    document.body.innerHTML = '<h2 style="color:white;text-align:center;padding-top:20%;">Stream link not found!</h2>';
-                                    return;
-                                }
-
-                                new ArtPlayer({
-                                    container: '#artplayer',
-                                    url: m3u8Url,
-                                    type: 'm3u8',
-                                    autoplay: true,
-                                    pip: true,
-                                    screenshot: true,
-                                    setting: true,
-                                    fullscreen: true,
-                                    fullscreenWeb: true,
-                                    customType: {
-                                        m3u8: function (video, url) {
-                                            if (Hls.isSupported()) {
-                                                const hls = new Hls();
-                                                hls.loadSource(url);
-                                                hls.attachMedia(video);
-                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                                video.src = url;
-                                            }
-                                        },
-                                    },
-                                });
-                            } catch (err) { console.error('Fetch Error:', err); }
-                        }
-                        initPlayer();
-                    </script>
-                </body>
-                </html>
-            `);
-        } catch (error) {
-            console.error('Render Error:', error);
-            res.status(500).send("Internal Player Error");
-        }
-    }
-
-    await server.start();
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
 }
 
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
+html,body{
+    width:100%;
+    height:100%;
+    background:#000;
+    overflow:hidden;
+    font-family:Arial,sans-serif;
+}
+
+#artplayer{
+    width:100vw;
+    height:100vh;
+    background:#000;
+}
+
+.art-video-player{
+    background:#000 !important;
+}
+
+.loading{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#000;
+    color:#fff;
+    z-index:9999;
+    font-size:18px;
+    letter-spacing:1px;
+}
+
+.error{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    background:#000;
+    color:#fff;
+    z-index:9999;
+    text-align:center;
+    padding:20px;
+}
+
+.spinner{
+    width:60px;
+    height:60px;
+    border:4px solid rgba(255,255,255,.2);
+    border-top-color:#fff;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+    margin-bottom:15px;
+}
+
+@keyframes spin{
+    to{
+        transform:rotate(360deg);
+    }
+}
+
+.art-bottom{
+    backdrop-filter:blur(10px);
+}
+
+.art-control-progress-inner{
+    height:4px !important;
+}
+
+video{
+    object-fit:contain !important;
+}
+</style>
+</head>
+
+<body>
+
+<div class="loading" id="loading">
+    <div>
+        <div class="spinner"></div>
+        Loading Stream...
+    </div>
+</div>
+
+<div id="artplayer"></div>
+
+<script>
+let art = null;
+let hls = null;
+
+async function initPlayer() {
+
+    try {
+
+        const response = await fetch(window.location.origin + '${apiPath}', {
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('API Error');
+        }
+
+        const data = await response.json();
+
+        const source = data.sources?.find(s => s.url);
+
+        if (!source || !source.url) {
+            showError('No stream source found');
+            return;
+        }
+
+        const streamUrl = source.url;
+
+        document.getElementById('loading').style.display = 'none';
+
+        if (art) {
+            art.destroy(false);
+            art = null;
+        }
+
+        art = new Artplayer({
+
+            container: '#artplayer',
+
+            url: streamUrl,
+
+            type: 'm3u8',
+
+            title: '${safeTitle}',
+
+            autoplay: true,
+
+            autoSize: true,
+
+            autoMini: true,
+
+            screenshot: true,
+
+            setting: true,
+
+            playbackRate: true,
+
+            aspectRatio: true,
+
+            fullscreen: true,
+
+            fullscreenWeb: true,
+
+            pip: true,
+
+            mutex: true,
+
+            backdrop: true,
+
+            hotkey: true,
+
+            airplay: true,
+
+            fastForward: true,
+
+            playsInline: true,
+
+            lock: true,
+
+            theme: '#00bfff',
+
+            lang: 'en',
+
+            volume: 1,
+
+            isLive: false,
+
+            miniProgressBar: true,
+
+            autoPlayback: true,
+
+            autoOrientation: true,
+
+            flip: true,
+
+            subtitleOffset: true,
+
+            icons: {},
+
+            settings: [
+                {
+                    html: 'Quality',
+                    width: 200,
+                    tooltip: 'Auto'
+                }
+            ],
+
+            customType: {
+
+                m3u8: function(video, url) {
+
+                    if (hls) {
+                        hls.destroy();
+                        hls = null;
+                    }
+
+                    if (Hls.isSupported()) {
+
+                        hls = new Hls({
+                            enableWorker: true,
+                            lowLatencyMode: true,
+                            backBufferLength: 90
+                        });
+
+                        hls.loadSource(url);
+
+                        hls.attachMedia(video);
+
+                        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            video.play().catch(()=>{});
+                        });
+
+                        hls.on(Hls.Events.ERROR, function(event, data) {
+
+                            if (data.fatal) {
+
+                                switch(data.type) {
+
+                                    case Hls.ErrorTypes.NETWORK_ERROR:
+                                        hls.startLoad();
+                                        break;
+
+                                    case Hls.ErrorTypes.MEDIA_ERROR:
+                                        hls.recoverMediaError();
+                                        break;
+
+                                    default:
+                                        hls.destroy();
+                                        break;
+                                }
+                            }
+                        });
+
+                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+
+                        video.src = url;
+
+                        video.addEventListener('loadedmetadata', function () {
+                            video.play().catch(()=>{});
+                        });
+                    }
+                }
+            }
+        });
+
+        art.on('ready', () => {
+            console.log('ArtPlayer Ready');
+        });
+
+        art.on('error', (err) => {
+            console.error('Player Error:', err);
+        });
+
+    } catch (err) {
+
+        console.error(err);
+
+        showError('Failed to load stream');
+    }
+}
+
+function showError(message) {
+
+    document.getElementById('loading').style.display = 'none';
+
+    document.body.innerHTML = \`
+        <div class="error">
+            <h2>\${message}</h2>
+        </div>
+    \`;
+}
+
+window.addEventListener('beforeunload', () => {
+
+    if (hls) {
+        hls.destroy();
+        hls = null;
+    }
+
+    if (art) {
+        art.destroy(false);
+        art = null;
+    }
 });
+
+initPlayer();
+</script>
+
+</body>
+</html>
+        `);
+
+    } catch (error) {
+
+        console.error('Render Error:', error);
+
+        res.status(500).send('Internal Player Error');
+    }
+}
