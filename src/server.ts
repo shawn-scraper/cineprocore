@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.6',
+        version: '1.2.7',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -57,11 +57,12 @@ async function main() {
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                    <title>CinePro Premium Player</title>
+                    <title>CinePro Premium</title>
                     <style>
-                        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        /* Full Screen Player Fix */
-                        #artplayer { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+                        /* Full Viewport Fix */
+                        body, html { margin: 0; padding: 0; width: 100%; height: 100vh; background: #000; overflow: hidden; }
+                        #artplayer { width: 100%; height: 100vh !important; }
+                        
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
                         .spinner { width: 45px; height: 45px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -71,7 +72,7 @@ async function main() {
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">INITIALIZING PREMIUM ENGINE...</div>
+                        <div id="status">OPTIMIZING DISPLAY...</div>
                     </div>
 
                     <div id="artplayer"></div>
@@ -112,14 +113,12 @@ async function main() {
                                     type: streamUrl.includes('m3u8') ? 'm3u8' : 'mp4',
                                     theme: '#e50914',
                                     autoplay: true,
-                                    autoSize: true,
+                                    autoSize: false, // AutoSize false kore screen size e force kora hoyeche
                                     fullscreen: true,
                                     fullscreenWeb: true,
                                     setting: true,
-                                    pip: true,
                                     playbackRate: true,
                                     aspectRatio: true,
-                                    setting: true,
                                     hotkey: true,
                                     pip: true,
                                     mutex: true,
@@ -127,10 +126,9 @@ async function main() {
                                     playsInline: true,
                                     autoPlayback: true,
                                     airplay: true,
-                                    lock: true, // Screen lock for mobile
+                                    lock: true,
                                     fastForward: true,
                                     autoOrientation: true,
-                                    // Security: Hide Video Info to protect main source
                                     videoAttributes: {
                                         crossOrigin: 'anonymous',
                                     },
@@ -153,7 +151,6 @@ async function main() {
                                                 hls.loadSource(url);
                                                 hls.attachMedia(video);
                                                 hls.on(Hls.Events.MANIFEST_PARSED, function () {
-                                                    // Quality selector outside settings
                                                     const levels = hls.levels;
                                                     const qualitySelector = levels.map((l, i) => ({
                                                         html: l.height + 'P',
@@ -182,15 +179,13 @@ async function main() {
                                     }
                                 });
 
-                                // Hide Info and Context Menu to secure Source
                                 art.on('ready', () => {
                                     loader.style.display = 'none';
-                                    // Remove Video Info element if it exists
+                                    // Security: Context menu and info hide
                                     const infoBtn = document.querySelector('.art-info');
                                     if(infoBtn) infoBtn.style.display = 'none';
                                 });
 
-                                // Disable right click
                                 art.container.addEventListener('contextmenu', (e) => e.preventDefault());
 
                             } catch (err) {
