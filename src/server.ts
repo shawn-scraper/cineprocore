@@ -43,8 +43,7 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- CUSTOM PLAYER ROUTE (Fastify Style) ---
-    // server.start() er AGEI eita korte hobe
+    // --- CUSTOM PREMIUM PLAYER ROUTE ---
     const fastify = (server as any).app || (server as any).instance;
 
     if (fastify) {
@@ -56,34 +55,62 @@ async function main() {
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>CinePro Premium Player</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>CinePro Player</title>
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                     <style>
-                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
-                        video { width: 100%; height: 100%; }
+                        body { margin: 0; background: #000; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+                        .artplayer-app { width: 100vw; height: 100vh; }
                     </style>
                 </head>
                 <body>
-                    <video id="video" controls autoplay crossorigin></video>
+                    <div class="artplayer-app"></div>
                     <script>
-                        const video = document.getElementById('video');
-                        async function load() {
+                        async function loadPlayer() {
                             try {
                                 const res = await fetch("/v1/movies/${movieId}");
                                 const data = await res.json();
+                                
                                 if (data.sources && data.sources.length > 0) {
-                                    const src = data.sources[0].url;
-                                    if (Hls.isSupported()) {
-                                        const hls = new Hls();
-                                        hls.loadSource(src);
-                                        hls.attachMedia(video);
-                                    } else {
-                                        video.src = src;
-                                    }
+                                    const qualities = data.sources.map(s => ({
+                                        html: s.quality || 'Auto',
+                                        url: s.url,
+                                    }));
+
+                                    const art = new ArtPlayer({
+                                        container: '.artplayer-app',
+                                        url: qualities[0].url,
+                                        type: qualities[0].url.includes('m3u8') ? 'm3u8' : 'mp4',
+                                        autoSize: true,
+                                        fullscreen: true,
+                                        fullscreenWeb: true,
+                                        setting: true,
+                                        pip: true,
+                                        playbackRate: true,
+                                        aspectRatio: true,
+                                        quality: qualities,
+                                        customType: {
+                                            m3u8: function (video, url) {
+                                                if (Hls.isSupported()) {
+                                                    const hls = new Hls();
+                                                    hls.loadSource(url);
+                                                    hls.attachMedia(video);
+                                                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                                    video.src = url;
+                                                }
+                                            },
+                                        },
+                                    });
+                                } else {
+                                    document.body.innerHTML = "<h2 style='color:white'>No Source Found!</h2>";
                                 }
-                            } catch (e) { console.error(e); }
+                            } catch (e) { 
+                                console.error(e);
+                                document.body.innerHTML = "<h2 style='color:white'>Server Connection Error!</h2>";
+                            }
                         }
-                        load();
+                        loadPlayer();
                     </script>
                 </body>
                 </html>
@@ -91,7 +118,6 @@ async function main() {
         });
     }
 
-    // Shobar sheshe server start hobe
     await server.start();
 }
 
