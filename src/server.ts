@@ -50,67 +50,79 @@ async function main() {
             const movieId = request.params.id;
 
             reply.type('text/html').send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>CinePro Premium Player</title>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CinePro Premium Player</title>
 
-                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://unpkg.com/artplayer/dist/artplayer.js"></script>
 
-                    <style>
-                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
-                        #player { width: 100%; height: 100%; }
-                    </style>
-                </head>
-                <body>
+    <style>
+        body {
+            margin: 0;
+            background: black;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #player {
+            width: 100%;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
 
-                    <div id="player"></div>
+<div id="player"></div>
 
-                    <script>
-                        async function load() {
-                            try {
-                                const res = await fetch("/v1/movies/${movieId}");
-                                const data = await res.json();
+<script>
+(async () => {
+    try {
+        const res = await fetch("/v1/movies/${movieId}");
+        const data = await res.json();
 
-                                if (!data.sources || data.sources.length === 0) return;
+        const src = data?.sources?.[0]?.url;
 
-                                const src = data.sources[0].url;
+        if (!src) {
+            console.error("No stream found");
+            return;
+        }
 
-                                new Artplayer({
-                                    container: '#player',
-                                    url: src,
-                                    autoplay: true,
-                                    fullscreen: true,
-                                    setting: true,
-                                    pip: true,
-                                    playbackRate: true,
-                                    aspectRatio: true,
-                                    screenshot: true,
-                                    customType: {
-                                        m3u8: function (video, url) {
-                                            if (Hls.isSupported()) {
-                                                const hls = new Hls();
-                                                hls.loadSource(url);
-                                                hls.attachMedia(video);
-                                            } else {
-                                                video.src = url;
-                                            }
-                                        }
-                                    }
-                                });
+        console.log("STREAM URL:", src);
 
-                            } catch (e) {
-                                console.error(e);
-                            }
-                        }
+        new Artplayer({
+            container: '#player',
+            url: src,
+            autoplay: true,
+            fullscreen: true,
+            setting: true,
+            pip: true,
+            playbackRate: true,
+            aspectRatio: true,
+            screenshot: true,
 
-                        load();
-                    </script>
+            customType: {
+                m3u8: function (video, url) {
+                    if (window.Hls && Hls.isSupported()) {
+                        const hls = new Hls();
+                        hls.loadSource(url);
+                        hls.attachMedia(video);
+                    } else {
+                        video.src = url;
+                    }
+                }
+            }
+        });
 
-                </body>
-                </html>
+    } catch (e) {
+        console.error("PLAYER ERROR:", e);
+    }
+})();
+</script>
+
+</body>
+</html>
             `);
         });
     }
