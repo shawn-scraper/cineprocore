@@ -54,9 +54,7 @@ async function main() {
         },
 
         stremio: {
-            // exposes a stremio addon on /stremio/manifest.json
             enableNativeAddon: process.env.STREMIO_ADDON === 'true',
-            // allows adding custom stremio addons that can be used as providers.
             stremioAddons: [
                 {
                     id: 'WebStreamerMBG',
@@ -71,19 +69,117 @@ async function main() {
             ]
         },
 
-        // MCP for AI agents
         mcp: {
             enabled: process.env.MCP_ENABLED === 'true'
         }
     });
 
-    // Register providers
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
+
+    // --- ARTPLAYER CUSTOM ROUTES START ---
+    const app = server.getApp();
+
+    // Direct Movie Player Route
+    app.get('/v1/play/movie/:id', async (req, res) => {
+        const id = req.params.id;
+        const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/movies/${id}`;
+        renderPlayer(res, streamApiUrl, `Movie ${id}`);
+    });
+
+    // Direct TV Show Player Route
+    app.get('/v1/play/tv/:id/:s/:e', async (req, res) => {
+        const { id, s, e } = req.params;
+        const streamApiUrl = `${process.env.PUBLIC_URL || ''}/v1/tv/${id}/${s}/${e}`;
+        renderPlayer(res, streamApiUrl, `TV Series ${id} - S${s}E${e}`);
+    });
+
+    // Helper function to render HTML
+    function renderPlayer(res: any, apiUrl: string, title: string) {
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${title} | Lumina Player</title>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                <style>
+                    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                    #artplayer { width: 100vw; height: 100vh; }
+                </style>
+            </head>
+            <body>
+                <div id="artplayer"></div>
+                <script>
+                    async function initPlayer() {
+                        try {
+                            const response = await fetch('${apiUrl}');
+                            const data = await response.json();
+                            const m3u8Url = data.sources && data.sources[0] ? data.sources[0].url : '';
+                            
+                            if(!m3u8Url) {
+                                document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:20%;">No Stream Found!</h2>';
+                                return;
+                            }
+
+                            var art = new ArtPlayer({
+                                container: '#artplayer',
+                                url: m3u8Url,
+                                type: 'm3u8',
+                                title: '${title}',
+                                poster: '', 
+                                volume: 0.7,
+                                isLive: false,
+                                muted: false,
+                                autoplay: true,
+                                pip: true,
+                                autoSize: true,
+                                autoMini: true,
+                                screenshot: true,
+                                setting: true,
+                                loop: false,
+                                flip: true,
+                                playbackRate: true,
+                                aspectRatio: true,
+                                fullscreen: true,
+                                fullscreenWeb: true,
+                                subtitleOffset: true,
+                                miniProgressBar: true,
+                                mutex: true,
+                                backdrop: true,
+                                playsInline: true,
+                                autoPlayback: true,
+                                airplay: true,
+                                customType: {
+                                    m3u8: function (video, url) {
+                                        if (Hls.isSupported()) {
+                                            const hls = new Hls();
+                                            hls.loadSource(url);
+                                            hls.attachMedia(video);
+                                        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                            video.src = url;
+                                        }
+                                    },
+                                },
+                            });
+                        } catch (err) {
+                            console.error(err);
+                        }
+                    }
+                    initPlayer();
+                </script>
+            </body>
+            </html>
+        `);
+    }
+    // --- ARTPLAYER CUSTOM ROUTES END ---
 
     await server.start();
 }
 
-main().catch(() => {
+main().catch((err) => {
+    console.error(err);
     process.exit(1);
 });
