@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.2.3', // Version updated for tracking
+        version: '1.2.5',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -57,119 +57,125 @@ async function main() {
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CinePro Ultra Player</title>
-                    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
-                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <title>CinePro ArtPlayer</title>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease; }
-                        .plyr-container.ready { opacity: 1; }
-                        .plyr--video { height: 100vh !important; width: 100vw !important; }
-                        .plyr__menu__container [role="menu"] { max-height: 220px !important; overflow-y: auto !important; }
+                        #artplayer { width: 100vw; height: 100vh; }
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
-                        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
+                        .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 11px; letter-spacing: 2px; opacity: 0.7; }
-                        :root { --plyr-color-main: #e50914; }
+                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 10px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">SYNCING CONTENT...</div>
+                        <div id="status">Syncing ArtPlayer Engine...</div>
                     </div>
 
-                    <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls crossorigin="anonymous"></video>
-                    </div>
+                    <div id="artplayer"></div>
 
-                    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    
                     <script>
-                        async function start() {
-                            const video = document.getElementById('player');
-                            const loader = document.getElementById('loader');
-                            const playerBox = document.getElementById('player-box');
+                        async function initPlayer() {
                             const status = document.getElementById('status');
-
+                            const loader = document.getElementById('loader');
+                            
                             const s = "${season || ''}";
                             const e = "${episode || ''}";
-                            
-                            let apiPath = (s && e) 
+                            const apiPath = (s && e) 
                                 ? \`/v1/tv/\${"${movieId}"}/seasons/\${s}/episodes/\${e}\` 
                                 : \`/v1/movies/\${"${movieId}"}\`;
 
                             try {
-                                let res = await fetch(apiPath);
-                                let data = await res.json();
+                                const res = await fetch(apiPath);
+                                const data = await res.json();
 
                                 if (!data.sources || data.sources.length === 0) {
                                     status.innerText = "SOURCE NOT FOUND";
                                     return;
                                 }
 
-                                const source = data.sources[0].url;
+                                const streamUrl = data.sources[0].url;
+                                
+                                // Subtitle Formatting for ArtPlayer
+                                const artSubtitles = (data.subtitles || []).map((sub, index) => ({
+                                    html: sub.language || sub.label || \`Subtitle \${index + 1}\`,
+                                    url: sub.url,
+                                    default: index === 0
+                                }));
 
-                                const plyrOptions = {
+                                const art = new Artplayer({
+                                    container: '#artplayer',
+                                    url: streamUrl,
+                                    type: streamUrl.includes('m3u8') ? 'm3u8' : 'mp4',
+                                    theme: '#e50914',
                                     autoplay: true,
-                                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
-                                    settings: ['captions', 'quality', 'speed'],
-                                    captions: { active: true, update: true, language: 'auto' },
-                                    speed: { selected: 1, options: [0.5, 1, 1.5, 2] }
-                                };
-
-                                // Function to attach tracks properly after Plyr init
-                                const attachSubtitles = (player) => {
-                                    if (data.subtitles && data.subtitles.length > 0) {
-                                        data.subtitles.forEach((sub, index) => {
-                                            const track = document.createElement('track');
-                                            track.kind = 'captions';
-                                            track.label = sub.language || sub.label || \`Subtitle \${index + 1}\`;
-                                            track.srclang = sub.lang || 'en';
-                                            track.src = sub.url;
-                                            if(index === 0) track.default = true;
-                                            video.appendChild(track);
-                                        });
-                                        // Force Plyr to refresh tracks
-                                        setTimeout(() => { player.source = player.source; }, 500);
-                                    }
-                                };
-
-                                if (Hls.isSupported() && (source.includes('m3u8') || source.includes('manifest'))) {
-                                    const hls = new Hls({ xhrSetup: (xhr) => { xhr.withCredentials = false; } });
-                                    hls.loadSource(source);
-                                    hls.attachMedia(video);
-                                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                                        const qualities = hls.levels.map(l => l.height);
-                                        qualities.unshift(0);
-                                        plyrOptions.quality = {
-                                            default: 0,
-                                            options: qualities,
-                                            forced: true,
-                                            onChange: (q) => {
-                                                if(q === 0) window.hls.currentLevel = -1;
-                                                else window.hls.levels.forEach((l, i) => { if(l.height === q) window.hls.currentLevel = i; });
+                                    autoSize: true,
+                                    fullscreen: true,
+                                    fullscreenWeb: true,
+                                    pip: true,
+                                    setting: true,
+                                    loop: false,
+                                    flip: true,
+                                    playbackRate: true,
+                                    aspectRatio: true,
+                                    subtitleOffset: true,
+                                    miniProgressBar: true,
+                                    mutex: true,
+                                    backdrop: true,
+                                    playsInline: true,
+                                    autoPlayback: true,
+                                    airplay: true,
+                                    customType: {
+                                        m3u8: function (video, url) {
+                                            if (Hls.isSupported()) {
+                                                const hls = new Hls();
+                                                hls.loadSource(url);
+                                                hls.attachMedia(video);
+                                                window.hls = hls;
+                                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                                video.src = url;
                                             }
-                                        };
-                                        const player = new Plyr(video, plyrOptions);
-                                        attachSubtitles(player);
-                                        loader.style.display = 'none';
-                                        playerBox.classList.add('ready');
-                                    });
-                                    window.hls = hls;
-                                } else {
-                                    video.src = source;
-                                    const player = new Plyr(video, plyrOptions);
-                                    attachSubtitles(player);
-                                    video.onloadedmetadata = () => {
-                                        loader.style.display = 'none';
-                                        playerBox.classList.add('ready');
-                                    };
-                                }
-                            } catch (err) { 
+                                        },
+                                    },
+                                    subtitle: {
+                                        url: artSubtitles.length > 0 ? artSubtitles[0].url : '',
+                                        type: 'vtt',
+                                        style: { color: '#fff', fontSize: '24px' },
+                                        escape: false,
+                                    },
+                                    settings: [
+                                        {
+                                            html: 'Subtitles',
+                                            type: 'selector',
+                                            icon: '<img width="22" height="22" src="https://artplayer.org/assets/img/subtitle.svg">',
+                                            selector: artSubtitles,
+                                            onSelect: function (item) {
+                                                art.subtitle.url = item.url;
+                                                return item.html;
+                                            },
+                                        }
+                                    ],
+                                });
+
+                                art.on('ready', () => {
+                                    loader.style.display = 'none';
+                                });
+
+                                art.on('error', (err) => {
+                                    console.log('Player Error:', err);
+                                    status.innerText = "STREAM ERROR";
+                                });
+
+                            } catch (err) {
                                 status.innerText = "CONNECTION ERROR";
                             }
                         }
-                        start();
+
+                        initPlayer();
                     </script>
                 </body>
                 </html>
