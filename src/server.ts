@@ -55,52 +55,25 @@ async function main() {
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>CinePro Premium</title>
+                    <title>CinePro Premium Player</title>
                     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-                        
-                        /* Shurute video hide kora thakbe jate default player na dekha jay */
-                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease-in-out; }
+                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.4s ease; }
                         .plyr-container.ready { opacity: 1; }
-
-                        #loader {
-                            position: fixed;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            z-index: 999;
-                        }
-
-                        .spinner {
-                            width: 50px;
-                            height: 50px;
-                            border: 5px solid #333;
-                            border-top: 5px solid #e50914;
-                            border-radius: 50%;
-                            animation: spin 1s linear infinite;
-                            margin-bottom: 15px;
-                        }
-
+                        #loader { position: fixed; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; }
+                        .spinner { width: 45px; height: 45px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 15px; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-                        #status-text {
-                            color: #fff;
-                            font-family: 'Arial', sans-serif;
-                            font-size: 14px;
-                            text-transform: uppercase;
-                            letter-spacing: 2px;
-                        }
-
+                        #status-text { color: #fff; font-family: sans-serif; font-size: 13px; letter-spacing: 1.5px; opacity: 0.8; }
                         .plyr--video { height: 100% !important; }
+                        :root { --plyr-color-main: #e50914; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status-text">CinePro Secure Link...</div>
+                        <div id="status-text">PREPARING CINEMATIC EXPERIENCE...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
@@ -109,48 +82,79 @@ async function main() {
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
                     <script>
-                        async function init() {
-                            const playerBox = document.getElementById('player-box');
-                            const loader = document.getElementById('loader');
-                            const status = document.getElementById('status-text');
+                        async function initPlayer() {
                             const video = document.getElementById('player');
-                            
+                            const loader = document.getElementById('loader');
+                            const playerBox = document.getElementById('player-box');
+
                             try {
-                                const response = await fetch("/v1/movies/${movieId}");
-                                const data = await response.json();
+                                const res = await fetch("/v1/movies/${movieId}");
+                                const data = await res.json();
 
-                                if (data.sources && data.sources.length > 0) {
-                                    const sourceUrl = data.sources[0].url;
-
-                                    const player = new Plyr(video, {
-                                        autoplay: true,
-                                        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'fullscreen'],
-                                    });
-
-                                    if (sourceUrl.includes('m3u8')) {
-                                        const hls = new Hls();
-                                        hls.loadSource(sourceUrl);
-                                        hls.attachMedia(video);
-                                        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                                            loader.style.display = 'none';
-                                            playerBox.classList.add('ready');
-                                        });
-                                    } else {
-                                        video.src = sourceUrl;
-                                        video.onloadeddata = () => {
-                                            loader.style.display = 'none';
-                                            playerBox.classList.add('ready');
-                                        };
-                                    }
-                                } else {
-                                    status.innerText = "NO SOURCE FOUND";
-                                    status.style.color = "red";
+                                if (!data.sources || data.sources.length === 0) {
+                                    document.getElementById('status-text').innerText = "CONTENT UNAVAILABLE";
+                                    return;
                                 }
-                            } catch (err) {
-                                status.innerText = "SERVER ERROR";
+
+                                const source = data.sources[0].url;
+
+                                // Subtitles set kora (jodi API theke ashe)
+                                if (data.subtitles) {
+                                    data.subtitles.forEach((sub, index) => {
+                                        const track = document.createElement('track');
+                                        track.kind = 'captions';
+                                        track.label = sub.language || 'Subtitle ' + (index + 1);
+                                        track.srclang = sub.lang || 'en';
+                                        track.src = sub.url;
+                                        if (index === 0) track.default = true;
+                                        video.appendChild(track);
+                                    });
+                                }
+
+                                const defaultOptions = {
+                                    autoplay: true,
+                                    quality: { default: 720, options: [1080, 720, 480, 360] },
+                                    speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
+                                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+                                    settings: ['captions', 'quality', 'speed'],
+                                    tooltips: { controls: true, seek: true },
+                                    keyboard: { focused: true, global: true }
+                                };
+
+                                if (source.includes('m3u8')) {
+                                    const hls = new Hls({
+                                        maxBufferLength: 40,
+                                        enableWorker: true,
+                                        lowLatencyMode: true
+                                    });
+                                    hls.loadSource(source);
+                                    hls.attachMedia(video);
+                                    
+                                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                                        const player = new Plyr(video, defaultOptions);
+                                        loader.style.display = 'none';
+                                        playerBox.classList.add('ready');
+                                        
+                                        // Quality update handle
+                                        player.on('qualitychange', (event) => {
+                                            if (window.hls) window.hls.currentLevel = event.detail.quality;
+                                        });
+                                    });
+                                    window.hls = hls;
+                                } else {
+                                    video.src = source;
+                                    const player = new Plyr(video, defaultOptions);
+                                    video.onloadeddata = () => {
+                                        loader.style.display = 'none';
+                                        playerBox.classList.add('ready');
+                                    };
+                                }
+                            } catch (e) {
+                                console.error(e);
+                                document.getElementById('status-text').innerText = "CONNECTION FAILED";
                             }
                         }
-                        init();
+                        initPlayer();
                     </script>
                 </body>
                 </html>
