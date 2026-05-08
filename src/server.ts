@@ -37,7 +37,7 @@ async function main() {
         },
 
         cors: {
-            origin: '*', // Sob domain allow kora holo
+            origin: '*',
             methods: ['GET', 'OPTIONS']
         },
 
@@ -50,85 +50,79 @@ async function main() {
         }
     });
 
-    const registry = server.getRegistry();
-    await registry.discoverProviders(path.join(__dirname, './providers/'));
-
+    // Custom Player Logic using Middleware (Safer)
     const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
 
     if (app) {
-        // Player Routes
-        app.get('/v1/play/movie/:id', (req: any, res: any) => {
-            renderPlayer(res, `/v1/movies/${req.params.id}`, `Movie ${req.params.id}`);
-        });
+        app.use((req: any, res: any, next: any) => {
+            const url = req.url;
+            
+            // Movie Player Handler
+            if (url.startsWith('/v1/play/movie/')) {
+                const id = url.split('/').pop();
+                return renderPlayer(res, `/v1/movies/${id}`, `Movie ${id}`);
+            }
 
-        app.get('/v1/play/tv/:id/:s/:e', (req: any, res: any) => {
-            renderPlayer(res, `/v1/tv/${req.params.id}/${req.params.s}/${req.params.e}`, `TV S${req.params.s}E${req.params.e}`);
+            // TV Player Handler
+            if (url.startsWith('/v1/play/tv/')) {
+                const parts = url.split('/');
+                const id = parts[4];
+                const s = parts[5];
+                const e = parts[6];
+                return renderPlayer(res, `/v1/tv/${id}/${s}/${e}`, `TV S${s}E${e}`);
+            }
+
+            next();
         });
     }
 
+    const registry = server.getRegistry();
+    await registry.discoverProviders(path.join(__dirname, './providers/'));
+
     function renderPlayer(res: any, apiPath: string, title: string) {
         res.setHeader('Content-Type', 'text/html');
-        res.send(`
+        return res.status(200).send(`
             <!DOCTYPE html>
-            <html lang="en">
+            <html>
             <head>
                 <title>${title}</title>
                 <meta charset="UTF-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                 <style>
-                    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; display: flex; justify-content: center; align-items: center; }
-                    #artplayer { width: 100%; height: 100%; }
+                    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                    #artplayer { width: 100vw; height: 100vh; }
                 </style>
             </head>
             <body>
                 <div id="artplayer"></div>
                 <script>
-                    async function loadStream() {
+                    async function init() {
                         try {
-                            const apiUrl = window.location.origin + '${apiPath}';
-                            const response = await fetch(apiUrl);
-                            const data = await response.json();
+                            const res = await fetch(window.location.origin + '${apiPath}');
+                            const data = await res.json();
+                            const url = data.sources?.[0]?.url;
+                            if(!url) return document.body.innerHTML = '<h2 style="color:white;text-align:center;">No Link</h2>';
                             
-                            // Check if sources exist
-                            const streamUrl = data.sources?.[0]?.url;
-
-                            if (!streamUrl) {
-                                document.body.innerHTML = '<h2 style="color:white; font-family:sans-serif;">No stream link found from server!</h2>';
-                                return;
-                            }
-
-                            const art = new ArtPlayer({
+                            new ArtPlayer({
                                 container: '#artplayer',
-                                url: streamUrl,
+                                url: url,
                                 type: 'm3u8',
-                                title: '${title}',
                                 autoplay: true,
-                                pip: true,
-                                screenshot: true,
-                                setting: true,
                                 fullscreen: true,
-                                fullscreenWeb: true,
-                                theme: '#ff0057',
                                 customType: {
-                                    m3u8: function(video, url) {
+                                    m3u8: (v, u) => {
                                         if (Hls.isSupported()) {
                                             const hls = new Hls();
-                                            hls.loadSource(url);
-                                            hls.attachMedia(video);
-                                        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                            video.src = url;
-                                        }
+                                            hls.loadSource(u);
+                                            hls.attachMedia(v);
+                                        } else v.src = u;
                                     }
                                 }
                             });
-                        } catch (e) {
-                            console.error("Player Error:", e);
-                            document.body.innerHTML = '<h2 style="color:white; font-family:sans-serif;">Error loading API. Check Console.</h2>';
-                        }
+                        } catch(e) { console.error(e); }
                     }
-                    loadStream();
+                    init();
                 </script>
             </body>
             </html>
