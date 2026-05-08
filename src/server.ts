@@ -43,24 +43,23 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- Start Server First then Attach Route ---
-    await server.start();
+    // --- CUSTOM PLAYER ROUTE (Fastify Style) ---
+    // server.start() er AGEI eita korte hobe
+    const fastify = (server as any).app || (server as any).instance;
 
-    // OMSS framework-er underlying app access korar try
-    const app = (server as any).app || (server as any).instance;
-
-    if (app) {
-        app.get('/play/:id', (req: any, res: any) => {
-            const movieId = req.params.id;
-            res.status(200).send(`
+    if (fastify) {
+        fastify.get('/play/:id', async (request: any, reply: any) => {
+            const movieId = request.params.id;
+            
+            reply.type('text/html').send(`
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>CinePro Player</title>
+                    <title>CinePro Premium Player</title>
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
-                        body { margin: 0; background: #000; overflow: hidden; height: 100vh; }
+                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
                         video { width: 100%; height: 100%; }
                     </style>
                 </head>
@@ -90,8 +89,10 @@ async function main() {
                 </html>
             `);
         });
-        console.log("✅ Custom Player Route attached at /play/:id");
     }
+
+    // Shobar sheshe server start hobe
+    await server.start();
 }
 
 main().catch((err) => {
