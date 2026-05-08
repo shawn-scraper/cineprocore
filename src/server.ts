@@ -60,29 +60,28 @@ async function main() {
                     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                     <style>
                         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.4s ease; }
+                        .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease; }
                         .plyr-container.ready { opacity: 1; }
                         #loader { position: fixed; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; }
                         .spinner { width: 45px; height: 45px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 15px; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                         #status-text { color: #fff; font-family: sans-serif; font-size: 13px; letter-spacing: 1.5px; opacity: 0.8; }
-                        .plyr--video { height: 100% !important; }
-                        :root { --plyr-color-main: #e50914; }
+                        :root { --plyr-color-main: #e50914; --plyr-video-control-background-hover: rgba(229, 9, 20, 0.2); }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status-text">PREPARING CINEMATIC EXPERIENCE...</div>
+                        <div id="status-text">FETCHING PREMIUM STREAM...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
-                        <video id="player" playsinline controls crossorigin></video>
+                        <video id="player" playsinline controls></video>
                     </div>
 
                     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
                     <script>
-                        async function initPlayer() {
+                        async function init() {
                             const video = document.getElementById('player');
                             const loader = document.getElementById('loader');
                             const playerBox = document.getElementById('player-box');
@@ -90,71 +89,64 @@ async function main() {
                             try {
                                 const res = await fetch("/v1/movies/${movieId}");
                                 const data = await res.json();
-
-                                if (!data.sources || data.sources.length === 0) {
-                                    document.getElementById('status-text').innerText = "CONTENT UNAVAILABLE";
-                                    return;
-                                }
+                                if (!data.sources || data.sources.length === 0) return;
 
                                 const source = data.sources[0].url;
 
-                                // Subtitles set kora (jodi API theke ashe)
-                                if (data.subtitles) {
-                                    data.subtitles.forEach((sub, index) => {
-                                        const track = document.createElement('track');
-                                        track.kind = 'captions';
-                                        track.label = sub.language || 'Subtitle ' + (index + 1);
-                                        track.srclang = sub.lang || 'en';
-                                        track.src = sub.url;
-                                        if (index === 0) track.default = true;
-                                        video.appendChild(track);
-                                    });
-                                }
-
                                 const defaultOptions = {
                                     autoplay: true,
-                                    quality: { default: 720, options: [1080, 720, 480, 360] },
-                                    speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-                                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+                                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
                                     settings: ['captions', 'quality', 'speed'],
-                                    tooltips: { controls: true, seek: true },
-                                    keyboard: { focused: true, global: true }
+                                    speed: { selected: 1, options: [0.5, 1, 1.5, 2] }
                                 };
 
-                                if (source.includes('m3u8')) {
-                                    const hls = new Hls({
-                                        maxBufferLength: 40,
-                                        enableWorker: true,
-                                        lowLatencyMode: true
-                                    });
+                                if (Hls.isSupported() && source.includes('m3u8')) {
+                                    const hls = new Hls();
                                     hls.loadSource(source);
                                     hls.attachMedia(video);
                                     
                                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                                        // Quality levels detect kora
+                                        const availableQualities = hls.levels.map((l) => l.height);
+                                        availableQualities.unshift(0); // Auto option
+
+                                        defaultOptions.quality = {
+                                            default: 0,
+                                            options: availableQualities,
+                                            forced: true,
+                                            onChange: (e) => updateQuality(e),
+                                        };
+
                                         const player = new Plyr(video, defaultOptions);
+                                        
+                                        // Manual Quality Change Logic
+                                        function updateQuality(newQuality) {
+                                            if (newQuality === 0) {
+                                                window.hls.currentLevel = -1; // Auto
+                                            } else {
+                                                window.hls.levels.forEach((level, levelIndex) => {
+                                                    if (level.height === newQuality) {
+                                                        window.hls.currentLevel = levelIndex;
+                                                    }
+                                                });
+                                            }
+                                        }
+
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
-                                        
-                                        // Quality update handle
-                                        player.on('qualitychange', (event) => {
-                                            if (window.hls) window.hls.currentLevel = event.detail.quality;
-                                        });
                                     });
                                     window.hls = hls;
                                 } else {
                                     video.src = source;
-                                    const player = new Plyr(video, defaultOptions);
-                                    video.onloadeddata = () => {
+                                    new Plyr(video, defaultOptions);
+                                    video.onloadedmetadata = () => {
                                         loader.style.display = 'none';
                                         playerBox.classList.add('ready');
                                     };
                                 }
-                            } catch (e) {
-                                console.error(e);
-                                document.getElementById('status-text').innerText = "CONNECTION FAILED";
-                            }
+                            } catch (e) { console.error(e); }
                         }
-                        initPlayer();
+                        init();
                     </script>
                 </body>
                 </html>
