@@ -43,95 +43,55 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
+    // --- CUSTOM PLAYER ROUTE (Fastify Style) ---
+    // server.start() er AGEI eita korte hobe
     const fastify = (server as any).app || (server as any).instance;
 
     if (fastify) {
         fastify.get('/play/:id', async (request: any, reply: any) => {
             const movieId = request.params.id;
-
+            
             reply.type('text/html').send(`
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>CinePro Premium Player</title>
-
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script src="https://unpkg.com/artplayer/dist/artplayer.js"></script>
-
-    <style>
-        body {
-            margin: 0;
-            background: black;
-            height: 100vh;
-            overflow: hidden;
-        }
-        #player {
-            width: 100%;
-            height: 100vh;
-        }
-    </style>
-</head>
-<body>
-
-<div id="player"></div>
-
-<script>
-(async () => {
-    try {
-        const res = await fetch("/v1/movies/${movieId}");
-        const data = await res.json();
-
-        const src = data?.sources?.[0]?.url;
-
-        if (!src) {
-            console.error("No stream found");
-            return;
-        }
-
-        console.log("STREAM URL:", src);
-
-        const art = new Artplayer({
-            container: '#player',
-            url: src,
-            autoplay: true,
-            fullscreen: true,
-            setting: true,
-            pip: true,
-            playbackRate: true,
-            aspectRatio: true,
-            screenshot: true,
-
-            customType: {
-                m3u8: function (video, url) {
-                    if (window.Hls && Hls.isSupported()) {
-                        const hls = new Hls();
-                        hls.loadSource(url);
-                        hls.attachMedia(video);
-                    } else {
-                        video.src = url;
-                    }
-                }
-            }
-        });
-
-        // FIX: ensure video starts properly (prevents black screen delay)
-        art.on('ready', () => {
-            art.play();
-        });
-
-    } catch (e) {
-        console.error("PLAYER ERROR:", e);
-    }
-})();
-</script>
-
-</body>
-</html>
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>CinePro Premium Player</title>
+                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <style>
+                        body { margin: 0; background: #000; height: 100vh; overflow: hidden; }
+                        video { width: 100%; height: 100%; }
+                    </style>
+                </head>
+                <body>
+                    <video id="video" controls autoplay crossorigin></video>
+                    <script>
+                        const video = document.getElementById('video');
+                        async function load() {
+                            try {
+                                const res = await fetch("/v1/movies/${movieId}");
+                                const data = await res.json();
+                                if (data.sources && data.sources.length > 0) {
+                                    const src = data.sources[0].url;
+                                    if (Hls.isSupported()) {
+                                        const hls = new Hls();
+                                        hls.loadSource(src);
+                                        hls.attachMedia(video);
+                                    } else {
+                                        video.src = src;
+                                    }
+                                }
+                            } catch (e) { console.error(e); }
+                        }
+                        load();
+                    </script>
+                </body>
+                </html>
             `);
         });
     }
 
+    // Shobar sheshe server start hobe
     await server.start();
 }
 
