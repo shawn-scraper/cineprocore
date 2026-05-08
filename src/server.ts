@@ -53,33 +53,30 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- ARTPLAYER CUSTOM ROUTES ---
     const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
 
     if (app) {
-        // Direct Movie Player Route
         app.get('/v1/play/movie/:id', async (req: any, res: any) => {
             const id = req.params.id;
-            const apiPath = `/v1/movies/${id}`;
-            renderPlayer(res, apiPath, `Movie ${id}`);
+            renderPlayer(res, `/v1/movies/${id}`, `Movie ${id}`);
         });
 
-        // Direct TV Player Route
         app.get('/v1/play/tv/:id/:s/:e', async (req: any, res: any) => {
             const { id, s, e } = req.params;
-            const apiPath = `/v1/tv/${id}/${s}/${e}`;
-            renderPlayer(res, apiPath, `TV Series ${id} - S${s}E${e}`);
+            renderPlayer(res, `/v1/tv/${id}/${s}/${e}`, `TV S${s}E${e}`);
         });
     }
 
     function renderPlayer(res: any, apiPath: string, title: string) {
+        // Eita browser ke bolbe eita ekta HTML page
+        res.setHeader('Content-Type', 'text/html');
+        
         res.send(`
             <!DOCTYPE html>
             <html>
             <head>
                 <title>${title} | Lumina Player</title>
                 <meta charset="UTF-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
                 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
                 <style>
@@ -92,19 +89,12 @@ async function main() {
                 <script>
                     async function initPlayer() {
                         try {
-                            const baseUrl = window.location.origin;
-                            const fullApiUrl = baseUrl + '${apiPath}';
-                            
-                            const response = await fetch(fullApiUrl);
+                            const response = await fetch(window.location.origin + '${apiPath}');
                             const data = await response.json();
-                            
-                            let m3u8Url = '';
-                            if (data.sources && data.sources.length > 0) {
-                                m3u8Url = data.sources[0].url;
-                            }
+                            const m3u8Url = data.sources?.[0]?.url;
 
                             if(!m3u8Url) {
-                                document.body.innerHTML = '<div style="color:white;text-align:center;padding-top:20%;font-family:sans-serif;"><h2>Stream link not found!</h2><p>Server-er details check korun.</p></div>';
+                                document.body.innerHTML = '<h2 style="color:white;text-align:center;padding-top:20%;">Stream link not found!</h2>';
                                 return;
                             }
 
@@ -114,15 +104,11 @@ async function main() {
                                 type: 'm3u8',
                                 title: '${title}',
                                 autoplay: true,
-                                volume: 0.8,
                                 pip: true,
                                 screenshot: true,
                                 setting: true,
-                                playbackRate: true,
-                                aspectRatio: true,
                                 fullscreen: true,
                                 fullscreenWeb: true,
-                                autoSize: true,
                                 customType: {
                                     m3u8: function (video, url) {
                                         if (Hls.isSupported()) {
@@ -135,9 +121,7 @@ async function main() {
                                     },
                                 },
                             });
-                        } catch (err) { 
-                            console.error('Player Error:', err);
-                        }
+                        } catch (err) { console.error(err); }
                     }
                     initPlayer();
                 </script>
