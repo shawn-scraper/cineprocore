@@ -18,7 +18,7 @@ async function main() {
         version: '1.0.0',
 
         // Network
-        host: process.env.HOST ?? '0.0.0.0', // Render er jonno 0.0.0.0 bhalo
+        host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
 
@@ -73,7 +73,7 @@ async function main() {
     const registry = server.getRegistry();
     await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    // --- CUSTOM PLAYER INJECTION (VidStack) ---
+    // --- PREMIUM VIDSTACK PLAYER SETUP ---
     const rawServer = server as any;
     const app = rawServer.app || rawServer._app || rawServer.instance;
 
@@ -81,50 +81,197 @@ async function main() {
         app.get('/v1/play/movie/:id', async (req: any, res: any) => {
             const movieId = req.params.id;
             const apiPath = `/v1/movies/${movieId}`;
-            
+
             res.setHeader('Content-Type', 'text/html');
             res.send(`
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Playing Movie ${movieId}</title>
-                    <link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
-                    <link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
-                    <script src="https://cdn.vidstack.io/player" type="module"></script>
-                    <style>
-                        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
-                        media-player { width: 100%; aspect-ratio: 16 / 9; max-width: 1200px; }
-                    </style>
-                </head>
-                <body>
-                    <media-player title="Movie Stream" src="" crossorigin>
-                        <media-provider></media-provider>
-                        <media-video-layout></media-video-layout>
-                    </media-player>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CinePro Player</title>
 
-                    <script type="module">
-                        const player = document.querySelector('media-player');
-                        async function loadSource() {
-                            try {
-                                const response = await fetch(window.location.origin + '${apiPath}');
-                                const data = await response.json();
-                                if (data.sources && data.sources.length > 0) {
-                                    // Localhost ke Render URL diye replace kora (Safety Net)
-                                    let streamUrl = data.sources[0].url;
-                                    if(streamUrl.includes('localhost:10000')) {
-                                        streamUrl = streamUrl.replace('http://localhost:10000', window.location.origin);
-                                    }
-                                    player.src = streamUrl;
-                                }
-                            } catch (e) { console.error("Error loading stream:", e); }
-                        }
-                        player.addEventListener('can-play', () => console.log('Ready to play!'));
-                        loadSource();
-                    </script>
-                </body>
-                </html>
+<link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
+<link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
+
+<script type="module" src="https://cdn.vidstack.io/player"></script>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+html,
+body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    font-family:Arial,sans-serif;
+}
+
+body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.player-container{
+    width:100%;
+    height:100vh;
+    background:#000;
+    position:relative;
+}
+
+media-player{
+    width:100%;
+    height:100%;
+    background:#000;
+    --media-brand:#00b3ff;
+    --media-focus-ring-color:#00b3ff;
+}
+
+.vds-buffering-indicator{
+    display:flex !important;
+}
+
+.loading-screen{
+    position:absolute;
+    inset:0;
+    background:#000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+    transition:opacity .3s ease;
+}
+
+.loader{
+    width:70px;
+    height:70px;
+    border:5px solid rgba(255,255,255,.15);
+    border-top-color:#00b3ff;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+}
+
+@keyframes spin{
+    to{
+        transform:rotate(360deg);
+    }
+}
+
+.error-box{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    color:#fff;
+    background:#111;
+    padding:20px 25px;
+    border-radius:12px;
+    font-size:15px;
+    display:none;
+    z-index:1000;
+    text-align:center;
+    border:1px solid rgba(255,255,255,.1);
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="player-container">
+
+<div class="loading-screen" id="loading">
+<div class="loader"></div>
+</div>
+
+<div class="error-box" id="errorBox">
+Failed to load stream
+</div>
+
+<media-player
+    id="player"
+    title="CinePro"
+    view-type="video"
+    stream-type="on-demand"
+    crossorigin
+    playsinline
+>
+    <media-provider></media-provider>
+
+    <media-video-layout
+        thumbnails=""
+        small-layout-when="never"
+    ></media-video-layout>
+
+</media-player>
+
+</div>
+
+<script type="module">
+
+const player = document.getElementById('player');
+const loading = document.getElementById('loading');
+const errorBox = document.getElementById('errorBox');
+
+async function loadSource() {
+
+    try {
+
+        const response = await fetch(window.location.origin + '${apiPath}');
+        const data = await response.json();
+
+        if (!data.sources || !data.sources.length) {
+            throw new Error('No stream found');
+        }
+
+        let streamUrl = data.sources[0].url;
+
+        if (streamUrl.includes('localhost:10000')) {
+            streamUrl = streamUrl.replace(
+                'http://localhost:10000',
+                window.location.origin
+            );
+        }
+
+        player.src = {
+            src: streamUrl,
+            type: 'video/mp4'
+        };
+
+    } catch (err) {
+
+        console.error(err);
+
+        loading.style.display = 'none';
+        errorBox.style.display = 'block';
+    }
+}
+
+player.addEventListener('can-play', () => {
+    loading.style.opacity = '0';
+
+    setTimeout(() => {
+        loading.style.display = 'none';
+    }, 300);
+});
+
+player.addEventListener('error', () => {
+    loading.style.display = 'none';
+    errorBox.style.display = 'block';
+});
+
+loadSource();
+
+</script>
+
+</body>
+</html>
             `);
         });
     }
