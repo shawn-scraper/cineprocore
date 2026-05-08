@@ -14,7 +14,7 @@ async function main() {
 
     const server = new OMSSServer({
         name: 'CinePro',
-        version: '1.1.0',
+        version: '1.2.0',
         host: process.env.HOST ?? '0.0.0.0',
         port: Number(process.env.PORT ?? 10000),
         publicUrl: publicUrl,
@@ -48,6 +48,8 @@ async function main() {
     if (fastify) {
         fastify.get('/play/:id', async (request: any, reply: any) => {
             const movieId = request.params.id;
+            const season = request.query.s;
+            const episode = request.query.e;
             
             reply.type('text/html').send(`
                 <!DOCTYPE html>
@@ -63,18 +65,24 @@ async function main() {
                         .plyr-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 0.5s ease; }
                         .plyr-container.ready { opacity: 1; }
                         .plyr--video { height: 100vh !important; width: 100vw !important; }
-                        .plyr__menu__container [role="menu"] { max-height: 250px; overflow-y: auto; }
+                        
+                        /* Subtitle Box Fix */
+                        .plyr__menu__container [role="menu"] { 
+                            max-height: 220px !important; 
+                            overflow-y: auto !important; 
+                        }
+                        
                         #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99; background: #000; }
                         .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #e50914; border-radius: 50%; animation: spin 0.8s linear infinite; }
                         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 12px; letter-spacing: 2px; opacity: 0.7; }
+                        #status { color: #fff; margin-top: 15px; font-family: sans-serif; font-size: 11px; letter-spacing: 2px; opacity: 0.7; text-transform: uppercase; }
                         :root { --plyr-color-main: #e50914; }
                     </style>
                 </head>
                 <body>
                     <div id="loader">
                         <div class="spinner"></div>
-                        <div id="status">SYNCING MULTI-AUDIO & QUALITY...</div>
+                        <div id="status">Syncing Content & Audio...</div>
                     </div>
 
                     <div class="plyr-container" id="player-box">
@@ -88,20 +96,27 @@ async function main() {
                             const loader = document.getElementById('loader');
                             const playerBox = document.getElementById('player-box');
 
+                            const s = "${season || ''}";
+                            const e = "${episode || ''}";
+                            const apiPath = (s && e) ? \`/v1/series/\${"${movieId}"}/\${s}/\${e}\` : \`/v1/movies/\${"${movieId}"}\`;
+
                             try {
-                                const res = await fetch("/v1/movies/${movieId}");
+                                const res = await fetch(apiPath);
                                 const data = await res.json();
-                                if (!data.sources || data.sources.length === 0) return;
+                                if (!data.sources || data.sources.length === 0) {
+                                    document.getElementById('status').innerText = "Source Not Found";
+                                    return;
+                                }
 
                                 const source = data.sources[0].url;
 
                                 if (data.subtitles) {
-                                    data.subtitles.forEach((s) => {
+                                    data.subtitles.forEach((sub) => {
                                         const track = document.createElement('track');
                                         track.kind = 'captions';
-                                        track.label = s.language || 'English';
-                                        track.srclang = s.lang || 'en';
-                                        track.src = s.url;
+                                        track.label = sub.language || 'Unknown';
+                                        track.srclang = sub.lang || 'en';
+                                        track.src = sub.url;
                                         video.appendChild(track);
                                     });
                                 }
@@ -113,13 +128,15 @@ async function main() {
                                     speed: { selected: 1, options: [0.5, 1, 1.5, 2] }
                                 };
 
-                                if (Hls.isSupported() && source.includes('m3u8')) {
-                                    const hls = new Hls();
+                                if (Hls.isSupported() && (source.includes('m3u8') || source.includes('manifest'))) {
+                                    const hls = new Hls({ 
+                                        enableWorker: true,
+                                        lowLatencyMode: true 
+                                    });
                                     hls.loadSource(source);
                                     hls.attachMedia(video);
                                     
                                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                                        // Quality Detect
                                         const qualities = hls.levels.map(l => l.height);
                                         qualities.unshift(0); // Auto
 
@@ -135,14 +152,9 @@ async function main() {
 
                                         const player = new Plyr(video, plyrOptions);
 
-                                        // Audio Track Detect
                                         hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-                                            const audioTracks = hls.audioTracks;
-                                            if (audioTracks.length > 1) {
-                                                // Audio selection logic inside Plyr menu
-                                                player.on('ready', () => {
-                                                    // HLS handles the actual switching when the browser/Plyr requests tracks
-                                                });
+                                            if (hls.audioTracks.length > 1) {
+                                                player.on('ready', () => {});
                                             }
                                         });
 
@@ -158,7 +170,10 @@ async function main() {
                                         playerBox.classList.add('ready');
                                     };
                                 }
-                            } catch (e) { console.error(e); }
+                            } catch (err) { 
+                                console.error(err);
+                                document.getElementById('status').innerText = "Loading Error";
+                            }
                         }
                         start();
                     </script>
