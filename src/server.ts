@@ -43,27 +43,26 @@ async function main() {
 
         stremio: {
             enableNativeAddon: process.env.STREMIO_ADDON === 'true',
-            stremioAddons: [
-                { id: 'WebStreamerMBG', url: 'https://87d6a6ef6b58-webstreamrmbg-dev.baby-beamup.club/manifest.json', enabled: true },
-                { id: 'Streamify', url: 'https://stremify.hayd.uk/manifest.json', enabled: true }
-            ]
+            stremioAddons: []
         }
     });
 
-    // Custom Player Logic using Middleware (Safer)
-    const app = (server as any).app || (server as any).expressApp || (server as any).getApp?.();
+    const registry = server.getRegistry();
+    await registry.discoverProviders(path.join(__dirname, './providers/'));
 
-    if (app) {
+    // --- STRONGER APP ACCESS LOGIC ---
+    const rawServer = server as any;
+    const app = rawServer.app || rawServer._app || rawServer.express || rawServer.instance || (typeof rawServer.getApp === 'function' ? rawServer.getApp() : null);
+
+    if (app && typeof app.use === 'function') {
         app.use((req: any, res: any, next: any) => {
             const url = req.url;
             
-            // Movie Player Handler
             if (url.startsWith('/v1/play/movie/')) {
                 const id = url.split('/').pop();
                 return renderPlayer(res, `/v1/movies/${id}`, `Movie ${id}`);
             }
 
-            // TV Player Handler
             if (url.startsWith('/v1/play/tv/')) {
                 const parts = url.split('/');
                 const id = parts[4];
@@ -71,13 +70,9 @@ async function main() {
                 const e = parts[6];
                 return renderPlayer(res, `/v1/tv/${id}/${s}/${e}`, `TV S${s}E${e}`);
             }
-
             next();
         });
     }
-
-    const registry = server.getRegistry();
-    await registry.discoverProviders(path.join(__dirname, './providers/'));
 
     function renderPlayer(res: any, apiPath: string, title: string) {
         res.setHeader('Content-Type', 'text/html');
@@ -102,7 +97,10 @@ async function main() {
                             const res = await fetch(window.location.origin + '${apiPath}');
                             const data = await res.json();
                             const url = data.sources?.[0]?.url;
-                            if(!url) return document.body.innerHTML = '<h2 style="color:white;text-align:center;">No Link</h2>';
+                            if(!url) {
+                                document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:20%;">Stream link not found yet!</h2>';
+                                return;
+                            }
                             
                             new ArtPlayer({
                                 container: '#artplayer',
@@ -110,6 +108,10 @@ async function main() {
                                 type: 'm3u8',
                                 autoplay: true,
                                 fullscreen: true,
+                                fullscreenWeb: true,
+                                setting: true,
+                                pip: true,
+                                screenshot: true,
                                 customType: {
                                     m3u8: (v, u) => {
                                         if (Hls.isSupported()) {
